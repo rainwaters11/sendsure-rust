@@ -234,6 +234,29 @@ fn unknown_contract_is_stopped() {
 }
 
 #[test]
+fn familiar_symbols_without_asset_identifier_stop() {
+    for symbol in ["USDC", "USDT", "ETH", "BTC", "XRP", "SOL", "XLM"] {
+        let intent = Intent {
+            action_type: ActionType::Send,
+            asset_symbol: Some(symbol.to_string()),
+            asset_identifier: None,
+            destination_address: Some("rDemoExchangeAddress".to_string()),
+            expected_destination_address: Some("rDemoExchangeAddress".to_string()),
+            entered_destination_tag_or_memo: Some("482901".to_string()),
+            expected_destination_tag_or_memo: None,
+            transaction_origin: Some("demo".to_string()),
+            ..demo_scenarios()[6].intent.clone()
+        };
+        let result = evaluate(&intent, &registry());
+        assert_eq!(result.decision, Decision::Stop, "symbol {symbol}");
+        assert_eq!(
+            result.triggered_rule_id, "TOKEN_MISSING_ASSET_IDENTIFIER",
+            "symbol {symbol}"
+        );
+    }
+}
+
+#[test]
 fn parsing_http_request_handles_split_body() {
     struct ChunkedReader {
         data: Vec<u8>,
@@ -270,6 +293,22 @@ fn parsing_http_request_handles_split_body() {
     let mut reader = ChunkedReader::new(request.to_vec(), 5);
     let (header, body) = parse_http_request(&mut reader).unwrap();
     assert!(header.contains("Content-Length: 16"));
+    assert_eq!(body, "{\"hello\":\"x\"}");
+}
+
+#[test]
+fn parsing_http_request_handles_lowercase_content_length_header() {
+    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\ncontent-length: 16\r\n\r\n{\"hello\":\"x\"}";
+    let mut reader = std::io::Cursor::new(request.as_slice());
+    let (_header, body) = parse_http_request(&mut reader).unwrap();
+    assert_eq!(body, "{\"hello\":\"x\"}");
+}
+
+#[test]
+fn parsing_http_request_handles_mixed_case_content_length_header() {
+    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nCoNtEnT-LeNgTh: 16\r\n\r\n{\"hello\":\"x\"}";
+    let mut reader = std::io::Cursor::new(request.as_slice());
+    let (_header, body) = parse_http_request(&mut reader).unwrap();
     assert_eq!(body, "{\"hello\":\"x\"}");
 }
 

@@ -406,10 +406,15 @@ pub fn parse_http_request<R: Read>(reader: &mut R) -> io::Result<(String, String
 }
 
 fn parse_content_length(header_text: &str) -> Option<usize> {
-    header_text
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("Content-Length:"))
-        .and_then(|value| value.trim().parse::<usize>().ok())
+    header_text.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let (name, value) = trimmed.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("content-length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    })
 }
 
 fn security_rules(intent: &Intent, hits: &mut Vec<RuleHit>) {
@@ -492,6 +497,17 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
             {
                 hits.push(hit("TOKEN_UNKNOWN_FAMILIAR_SYMBOL", Decision::Stop, "An unknown token is using a familiar symbol, which can indicate a lookalike asset.", "Do not continue unless you independently verify the token identifier."));
             }
+        }
+    } else if let Some(sym) = &i.asset_symbol {
+        if r.familiar_symbols
+            .contains(sym.to_ascii_uppercase().as_str())
+        {
+            hits.push(hit(
+                "TOKEN_MISSING_ASSET_IDENTIFIER",
+                Decision::Stop,
+                "A familiar token symbol was provided without an asset identifier, which is ambiguous and unsafe.",
+                "Provide the asset identifier before continuing.",
+            ));
         }
     }
     if i.action_type == ActionType::Swap {
