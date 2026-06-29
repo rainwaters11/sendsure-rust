@@ -224,6 +224,7 @@ fn network_aliases_and_display_names_are_resolved_for_supported_tokens() {
     ] {
         let intent = Intent {
             action_type: ActionType::Send,
+            source_network: None,
             asset_symbol: Some(asset_symbol.to_string()),
             asset_identifier: Some(asset_identifier.to_string()),
             destination_network: Some(network_input.to_string()),
@@ -408,6 +409,89 @@ fn missing_both_networks_for_registered_swap_token_stops() {
         expected_destination_address: Some("0xDemoRecipient".to_string()),
         swap_slippage_percent: Some(2.0),
         ..basic(ActionType::Swap)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
+fn source_and_destination_recognized_and_supported_can_continue() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn source_and_destination_display_names_supported_can_continue() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("Ethereum".to_string()),
+        destination_network: Some("Base".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn recognized_but_unsupported_source_network_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("solana".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNSUPPORTED_SOURCE_NETWORK");
+}
+
+#[test]
+fn unknown_source_network_stops_even_with_valid_destination() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("tron".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
+fn misspelled_source_network_stops_even_with_valid_destination() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("etherum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
     };
     let result = evaluate(&intent, &registry());
     assert_eq!(result.decision, Decision::Stop);

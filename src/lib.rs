@@ -544,50 +544,82 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
                     ));
                 }
             }
-            let destination_network = i
-                .destination_network
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty());
-            let resolved_network = if let Some(destination_network) = destination_network {
-                match canonical_network_id(destination_network, r) {
-                    Some(network_id) => Some(network_id),
-                    None => {
-                        hits.push(hit(
-                            "TOKEN_UNKNOWN_DESTINATION_NETWORK",
-                            Decision::Stop,
-                            "The destination network is not recognized in SendSure's network registry.",
-                            "Correct the destination network before continuing.",
-                        ));
-                        None
-                    }
-                }
-            } else if matches!(i.action_type, ActionType::Send | ActionType::Swap) {
+            if matches!(i.action_type, ActionType::Send | ActionType::Swap) {
                 let source_network = i
                     .source_network
                     .as_deref()
                     .map(str::trim)
                     .filter(|value| !value.is_empty());
-                match source_network.and_then(|network| canonical_network_id(network, r)) {
-                    Some(network_id) => Some(network_id),
-                    None => {
+                let destination_network = i
+                    .destination_network
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+
+                let resolved_source_network = if let Some(source_network) = source_network {
+                    match canonical_network_id(source_network, r) {
+                        Some(network_id) => Some(network_id),
+                        None => {
+                            hits.push(hit(
+                                "TOKEN_UNKNOWN_SOURCE_NETWORK",
+                                Decision::Stop,
+                                "The source network is not recognized in SendSure's network registry.",
+                                "Correct the source network before continuing.",
+                            ));
+                            None
+                        }
+                    }
+                } else if destination_network.is_none() {
+                    hits.push(hit(
+                        "TOKEN_UNKNOWN_SOURCE_NETWORK",
+                        Decision::Stop,
+                        "The source network is required and must be recognized when destination network is not provided.",
+                        "Provide a supported source network before continuing.",
+                    ));
+                    None
+                } else {
+                    None
+                };
+
+                if let Some(source_network_id) = resolved_source_network {
+                    if !token.networks.contains(source_network_id) {
                         hits.push(hit(
-                            "TOKEN_UNKNOWN_SOURCE_NETWORK",
+                            "TOKEN_UNSUPPORTED_SOURCE_NETWORK",
                             Decision::Stop,
-                            "The source network is required and must be recognized when destination network is not provided.",
-                            "Provide a supported source network before continuing.",
+                            "The selected asset is not supported on the source network in SendSure's registry.",
+                            "Choose a supported source network for this asset before continuing.",
                         ));
-                        None
                     }
                 }
-            } else {
-                i.source_network
-                    .as_deref()
-                    .and_then(|network| canonical_network_id(network, r))
-            };
-            if let Some(network_id) = resolved_network {
-                if !token.networks.contains(network_id) {
-                    hits.push(hit("TOKEN_UNSUPPORTED_DESTINATION_NETWORK", Decision::Stop, "The selected asset is not supported on the destination network in SendSure's registry.", "Choose a supported network for this asset before continuing."));
+
+                let resolved_destination_network = if let Some(destination_network) =
+                    destination_network
+                {
+                    match canonical_network_id(destination_network, r) {
+                        Some(network_id) => Some(network_id),
+                        None => {
+                            hits.push(hit(
+                                "TOKEN_UNKNOWN_DESTINATION_NETWORK",
+                                Decision::Stop,
+                                "The destination network is not recognized in SendSure's network registry.",
+                                "Correct the destination network before continuing.",
+                            ));
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                if let Some(destination_network_id) = resolved_destination_network {
+                    if !token.networks.contains(destination_network_id) {
+                        hits.push(hit(
+                            "TOKEN_UNSUPPORTED_DESTINATION_NETWORK",
+                            Decision::Stop,
+                            "The selected asset is not supported on the destination network in SendSure's registry.",
+                            "Choose a supported network for this asset before continuing.",
+                        ));
+                    }
                 }
             }
         } else if let Some(sym) = &i.asset_symbol {
