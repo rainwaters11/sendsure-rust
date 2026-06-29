@@ -78,6 +78,7 @@ pub struct Evaluation {
 pub struct Network {
     pub id: &'static str,
     pub display_name: &'static str,
+    pub aliases: &'static [&'static str],
 }
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -116,16 +117,23 @@ pub struct Registries {
 impl Default for Registries {
     fn default() -> Self {
         let mut networks = HashMap::new();
-        for (id, display_name) in [
-            ("xrpl", "XRP Ledger"),
-            ("ethereum", "Ethereum"),
-            ("base", "Base"),
-            ("bnb-smart-chain", "BNB Smart Chain"),
-            ("stellar", "Stellar"),
-            ("polygon", "Polygon"),
-            ("solana", "Solana"),
+        for (id, display_name, aliases) in [
+            ("xrpl", "XRP Ledger", &[] as &[&str]),
+            ("ethereum", "Ethereum", &[] as &[&str]),
+            ("base", "Base", &[] as &[&str]),
+            ("bnb-smart-chain", "BNB Smart Chain", &["bsc"] as &[&str]),
+            ("stellar", "Stellar", &[] as &[&str]),
+            ("polygon", "Polygon", &[] as &[&str]),
+            ("solana", "Solana", &[] as &[&str]),
         ] {
-            networks.insert(id, Network { id, display_name });
+            networks.insert(
+                id,
+                Network {
+                    id,
+                    display_name,
+                    aliases,
+                },
+            );
         }
         let mut tokens = HashMap::new();
         tokens.insert(
@@ -258,15 +266,27 @@ fn normalize_text(value: &str) -> String {
         .replace([' ', '-', '_'], "")
 }
 
-fn network_matches(candidate: &str, profile_network: &str, registries: &Registries) -> bool {
+fn canonical_network_id(candidate: &str, registries: &Registries) -> Option<&'static str> {
     let normalized_candidate = normalize_text(candidate);
-    let normalized_profile = normalize_text(profile_network);
-    registries.networks.values().any(|network| {
+    registries.networks.values().find_map(|network| {
         let network_id = normalize_text(network.id);
         let display_name = normalize_text(network.display_name);
-        (network_id == normalized_candidate || display_name == normalized_candidate)
-            && (network_id == normalized_profile || display_name == normalized_profile)
+        let alias_matches = network
+            .aliases
+            .iter()
+            .any(|alias| normalize_text(alias) == normalized_candidate);
+        (network_id == normalized_candidate
+            || display_name == normalized_candidate
+            || alias_matches)
+            .then_some(network.id)
     })
+}
+
+fn network_matches(candidate: &str, profile_network: &str, registries: &Registries) -> bool {
+    let candidate_id = canonical_network_id(candidate, registries);
+    let profile_id = canonical_network_id(profile_network, registries);
+    candidate_id
+        .is_some_and(|candidate_id| profile_id.is_some_and(|profile_id| candidate_id == profile_id))
 }
 
 fn resolved_expected_tag(intent: &Intent, registries: &Registries) -> Option<String> {
@@ -300,13 +320,22 @@ fn resolved_expected_tag(intent: &Intent, registries: &Registries) -> Option<Str
                 .destination_address
                 .eq_ignore_ascii_case(destination_address)
             {
-                deposit.expected_tag_or_memo.map(str::to_string)
+                deposit
+                    .expected_tag_or_memo
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
             } else {
                 None
             }
         });
     }
-    intent.expected_destination_tag_or_memo.clone()
+    intent
+        .expected_destination_tag_or_memo
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn contains_sensitive_request(value: &str) -> bool {
@@ -471,13 +500,20 @@ fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) 
         }
     }
     if i.action_type == ActionType::Send {
-        let expected = resolved_expected_tag(i, registries);
-        if expected.is_some() {
+        let expected = resolved_expected_tag(i, registries)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if let Some(expected_tag) = expected {
             match &i.entered_destination_tag_or_memo {
                 None => hits.push(hit("TRANSFER_MISSING_DESTINATION_TAG", Decision::Stop, "A destination tag or memo is required for this deposit account but was not entered.", "Do not send until the required tag or memo is added.")),
-                Some(entered) if entered.trim().is_empty() => hits.push(hit("TRANSFER_MISSING_DESTINATION_TAG", Decision::Stop, "A destination tag or memo is required for this deposit account but was not entered.", "Do not send until the required tag or memo is added.")),
-                Some(entered) if entered != expected.as_deref().unwrap_or_default() => hits.push(hit("TRANSFER_DESTINATION_TAG_MISMATCH", Decision::Stop, "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.", "Verify the deposit profile in the exchange and correct the destination tag before sending.")),
-                _ => {}
+                Some(entered) => {
+                    let entered_tag = entered.trim();
+                    if entered_tag.is_empty() {
+                        hits.push(hit("TRANSFER_MISSING_DESTINATION_TAG", Decision::Stop, "A destination tag or memo is required for this deposit account but was not entered.", "Do not send until the required tag or memo is added."));
+                    } else if entered_tag != expected_tag {
+                        hits.push(hit("TRANSFER_DESTINATION_TAG_MISMATCH", Decision::Stop, "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.", "Verify the deposit profile in the exchange and correct the destination tag before sending."));
+                    }
+                }
             }
         }
     }
@@ -486,22 +522,29 @@ fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) 
 fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if let Some(id) = norm(&i.asset_identifier) {
         if let Some(token) = r.tokens.get(id.as_str()) {
-            if let Some(net) = norm(&i.destination_network).or_else(|| norm(&i.source_network)) {
-                if !token.networks.contains(net.as_str()) {
+            if let Some(network_id) = i
+                .destination_network
+                .as_deref()
+                .and_then(|network| canonical_network_id(network, r))
+                .or_else(|| {
+                    i.source_network
+                        .as_deref()
+                        .and_then(|network| canonical_network_id(network, r))
+                })
+            {
+                if !token.networks.contains(network_id) {
                     hits.push(hit("TOKEN_UNSUPPORTED_DESTINATION_NETWORK", Decision::Stop, "The selected asset is not supported on the destination network in SendSure's registry.", "Choose a supported network for this asset before continuing."));
                 }
             }
         } else if let Some(sym) = &i.asset_symbol {
-            if r.familiar_symbols
-                .contains(sym.to_ascii_uppercase().as_str())
-            {
+            let symbol = sym.trim().to_ascii_uppercase();
+            if r.familiar_symbols.contains(symbol.as_str()) {
                 hits.push(hit("TOKEN_UNKNOWN_FAMILIAR_SYMBOL", Decision::Stop, "An unknown token is using a familiar symbol, which can indicate a lookalike asset.", "Do not continue unless you independently verify the token identifier."));
             }
         }
     } else if let Some(sym) = &i.asset_symbol {
-        if r.familiar_symbols
-            .contains(sym.to_ascii_uppercase().as_str())
-        {
+        let symbol = sym.trim().to_ascii_uppercase();
+        if r.familiar_symbols.contains(symbol.as_str()) {
             hits.push(hit(
                 "TOKEN_MISSING_ASSET_IDENTIFIER",
                 Decision::Stop,
@@ -512,7 +555,14 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     }
     if i.action_type == ActionType::Swap {
         if let Some(slip) = i.swap_slippage_percent {
-            if slip <= 3.0 {
+            if !slip.is_finite() || slip < 0.0 {
+                hits.push(hit(
+                    "SWAP_INVALID_SLIPPAGE",
+                    Decision::Stop,
+                    "The swap slippage is negative or invalid.",
+                    "Enter a valid slippage percentage before proceeding.",
+                ));
+            } else if slip <= 3.0 {
                 // READY threshold: 0% through 3%.
             } else if slip <= 10.0 {
                 hits.push(hit(
@@ -535,14 +585,25 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
 
 fn signature_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if i.action_type == ActionType::Sign && i.asset_was_unsolicited {
-        if let Some(c) = &i.contract_address {
-            if r.contracts
-                .get(c.as_str())
-                .map(|p| !p.trusted)
-                .unwrap_or(true)
-            {
-                hits.push(hit("SIGN_UNEXPECTED_AIRDROP_INTERACTION", Decision::Stop, "The transaction interacts with an unsolicited asset or unexpected airdrop contract.", "Do not sign unsolicited airdrop transactions or messages."));
-            }
+        let contract_address = i
+            .contract_address
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let is_untrusted_or_missing = contract_address.is_none()
+            || contract_address.is_some_and(|address| {
+                r.contracts
+                    .get(address)
+                    .map(|profile| !profile.trusted)
+                    .unwrap_or(true)
+            });
+        if is_untrusted_or_missing {
+            hits.push(hit(
+                "SIGN_UNEXPECTED_AIRDROP_INTERACTION",
+                Decision::Stop,
+                "The transaction interacts with an unsolicited asset or unexpected airdrop contract.",
+                "Do not sign unsolicited airdrop transactions or messages.",
+            ));
         }
     }
 }
