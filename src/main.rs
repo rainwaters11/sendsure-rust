@@ -1,5 +1,5 @@
-use sendsure_rust::{demo_scenarios, evaluate, Decision, Intent, Registries};
-use std::io::{Read, Write};
+use sendsure_rust::{demo_scenarios, evaluate, parse_http_request, Decision, Intent, Registries};
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 
 fn main() {
@@ -50,11 +50,8 @@ fn serve(addr: &str) -> std::io::Result<()> {
 }
 
 fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
-    let mut buffer = [0_u8; 32768];
-    let read = stream.read(&mut buffer)?;
-    let request = String::from_utf8_lossy(&buffer[..read]);
+    let (request, body) = parse_http_request(&mut stream)?;
     let first = request.lines().next().unwrap_or_default();
-    let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
     let (status, content_type, response) = if first.starts_with("GET /health ") {
         (
             "200 OK",
@@ -68,7 +65,7 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
             serde_json::to_string(&demo_scenarios()).unwrap_or_else(|_| "[]".to_string()),
         )
     } else if first.starts_with("POST /api/evaluate ") {
-        match serde_json::from_str::<Intent>(body) {
+        match serde_json::from_str::<Intent>(&body) {
             Ok(intent) => (
                 "200 OK",
                 "application/json",

@@ -1,4 +1,7 @@
-use sendsure_rust::{demo_scenarios, evaluate, ActionType, Decision, Intent, Registries};
+use sendsure_rust::{
+    demo_scenarios, evaluate, parse_http_request, ActionType, Decision, Intent, Registries,
+};
+use std::io::Read;
 
 fn registry() -> Registries {
     Registries::default()
@@ -13,7 +16,10 @@ fn corrected_xrp_tag_mismatch_stops_with_required_rule() {
         result.triggered_rule_id,
         "TRANSFER_DESTINATION_TAG_MISMATCH"
     );
-    assert_eq!(result.explanation, "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.");
+    assert_eq!(
+        result.explanation,
+        "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified."
+    );
 }
 
 #[test]
@@ -26,24 +32,55 @@ fn missing_xrp_tag_has_separate_stop_rule() {
 }
 
 #[test]
-fn seven_demo_scenarios_have_required_order_and_summary() {
+fn incorrect_xrp_tag_has_stop_rule() {
+    let mut intent = demo_scenarios()[6].intent.clone();
+    intent.entered_destination_tag_or_memo = Some("482109".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TRANSFER_DESTINATION_TAG_MISMATCH"
+    );
+}
+
+#[test]
+fn registry_derived_expected_tag_is_used_for_xrp_deposit() {
+    let mut intent = demo_scenarios()[6].intent.clone();
+    intent.expected_destination_tag_or_memo = None;
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn demo_scenarios_follow_expected_decisions() {
+    let scenarios = demo_scenarios();
+    let expected_decisions = [
+        Decision::Stop,
+        Decision::Stop,
+        Decision::Stop,
+        Decision::Stop,
+        Decision::Stop,
+        Decision::Review,
+        Decision::Ready,
+    ];
+    assert_eq!(scenarios.len(), expected_decisions.len());
+    for (scenario, expected_decision) in scenarios.iter().zip(expected_decisions.iter()) {
+        let result = evaluate(&scenario.intent, &registry());
+        assert_eq!(
+            result.decision, *expected_decision,
+            "scenario {}",
+            scenario.name
+        );
+    }
+}
+
+#[test]
+fn seven_demo_scenarios_have_required_summary() {
     let scenarios = demo_scenarios();
     let decisions: Vec<_> = scenarios
         .iter()
-        .map(|s| evaluate(&s.intent, &registry()).decision)
+        .map(|scenario| evaluate(&scenario.intent, &registry()).decision)
         .collect();
-    assert_eq!(
-        decisions,
-        vec![
-            Decision::Stop,
-            Decision::Stop,
-            Decision::Stop,
-            Decision::Stop,
-            Decision::Stop,
-            Decision::Review,
-            Decision::Ready
-        ]
-    );
     assert_eq!(
         decisions.iter().filter(|d| **d == Decision::Stop).count(),
         5
@@ -59,6 +96,60 @@ fn seven_demo_scenarios_have_required_order_and_summary() {
 }
 
 #[test]
+fn slippage_at_three_percent_is_ready() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = Some(3.0);
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn slippage_just_above_three_percent_is_review() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = Some(3.01);
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Review);
+}
+
+#[test]
+fn slippage_at_ten_percent_is_review() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = Some(10.0);
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Review);
+}
+
+#[test]
+fn slippage_above_ten_percent_is_stop() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = Some(10.01);
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+}
+
+#[test]
+fn decimal_uint256_max_is_detected_as_unlimited_approval() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope = Some(
+        "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+            .to_string(),
+    );
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");
+}
+
+#[test]
+fn hex_uint256_max_is_detected_as_unlimited_approval() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope =
+        Some("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");
+}
+
+#[test]
 fn stop_precedence_beats_review() {
     let mut intent = demo_scenarios()[5].intent.clone();
     intent.action_type = ActionType::Approve;
@@ -69,10 +160,124 @@ fn stop_precedence_beats_review() {
 }
 
 #[test]
+fn review_precedence_beats_ready() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = Some(7.0);
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Review);
+}
+
+#[test]
+fn empty_destination_address_is_stopped() {
+    let mut intent = demo_scenarios()[6].intent.clone();
+    intent.destination_address = None;
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TRANSFER_EMPTY_DESTINATION_ADDRESS"
+    );
+}
+
+#[test]
+fn seed_phrase_request_is_stopped() {
+    let mut intent = demo_scenarios()[6].intent.clone();
+    intent.asset_symbol = Some("seed phrase".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "SECURITY_SEED_OR_PRIVATE_KEY_REQUEST"
+    );
+}
+
+#[test]
+fn private_key_request_is_stopped() {
+    let mut intent = demo_scenarios()[6].intent.clone();
+    intent.asset_identifier = Some("private key".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "SECURITY_SEED_OR_PRIVATE_KEY_REQUEST"
+    );
+}
+
+#[test]
+fn trusted_contract_is_allowed() {
+    let intent = Intent {
+        action_type: ActionType::Sign,
+        asset_was_unsolicited: true,
+        contract_address: Some("0xDemoSwapRouter".to_string()),
+        transaction_origin: Some("airdrop-site.example".to_string()),
+        ..demo_scenarios()[4].intent.clone()
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn unknown_contract_is_stopped() {
+    let intent = Intent {
+        action_type: ActionType::Sign,
+        asset_was_unsolicited: true,
+        contract_address: Some("0xUnexpectedAirdrop".to_string()),
+        transaction_origin: Some("airdrop-site.example".to_string()),
+        ..demo_scenarios()[4].intent.clone()
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "SIGN_UNEXPECTED_AIRDROP_INTERACTION"
+    );
+}
+
+#[test]
+fn parsing_http_request_handles_split_body() {
+    struct ChunkedReader {
+        data: Vec<u8>,
+        chunk_size: usize,
+        position: usize,
+    }
+
+    impl ChunkedReader {
+        fn new(data: Vec<u8>, chunk_size: usize) -> Self {
+            Self {
+                data,
+                chunk_size,
+                position: 0,
+            }
+        }
+    }
+
+    impl Read for ChunkedReader {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.position >= self.data.len() {
+                return Ok(0);
+            }
+            let size = self
+                .chunk_size
+                .min(self.data.len() - self.position)
+                .min(buf.len());
+            buf[..size].copy_from_slice(&self.data[self.position..self.position + size]);
+            self.position += size;
+            Ok(size)
+        }
+    }
+
+    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 16\r\n\r\n{\"hello\":\"x\"}";
+    let mut reader = ChunkedReader::new(request.to_vec(), 5);
+    let (header, body) = parse_http_request(&mut reader).unwrap();
+    assert!(header.contains("Content-Length: 16"));
+    assert_eq!(body, "{\"hello\":\"x\"}");
+}
+
+#[test]
 fn ready_for_basic_matching_transfer() {
     let intent = Intent {
         expected_destination_tag_or_memo: None,
-        entered_destination_tag_or_memo: None,
+        entered_destination_tag_or_memo: Some("482901".to_string()),
         ..demo_scenarios()[6].intent.clone()
     };
     let result = evaluate(&intent, &registry());

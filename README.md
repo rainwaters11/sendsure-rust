@@ -4,6 +4,15 @@ SendSure is a wallet-agnostic, intent-aware transaction preflight safety layer. 
 
 The wallet remains responsible for custody and signing. SendSure never requests, collects, stores, or processes seed phrases or private keys.
 
+## Current implementation summary
+
+- Deterministic Rust engine with transfer, swap, approval, signature, and security checks.
+- In-memory registries that include XRP Ledger, Ethereum, Base, BNB Smart Chain, Stellar, XRP on XRP Ledger, XLM on Stellar, USDC on Ethereum and Base, and ETH on Ethereum and Base.
+- XRP deposit tags and memos are resolved from the in-memory deposit registry when the destination matches the Demo Exchange XRP deposit profile.
+- Slippage is evaluated with the requested thresholds: 0% through 3% is READY, greater than 3% through 10% is REVIEW, and greater than 10% is STOP.
+- Deterministic STOP rules cover empty SEND/SWAP destination addresses, seed-phrase requests, and private-key requests.
+- Twenty-one regression tests cover the seven demo scenarios, tag handling, slippage thresholds, unlimited approvals, trusted/unknown contracts, empty addresses, sensitive-key requests, and split HTTP request bodies.
+
 ## What is implemented
 
 - Deterministic Rust safety engine for transfers, tokens, swaps, signatures, approvals, and wallet-security education hooks.
@@ -24,11 +33,14 @@ Current primary rules include:
 | --- | --- | --- |
 | `TRANSFER_DESTINATION_TAG_MISMATCH` | STOP | Entered destination tag/memo differs from the expected exchange deposit tag/memo. |
 | `TRANSFER_MISSING_DESTINATION_TAG` | STOP | A required destination tag/memo is absent. |
+| `TRANSFER_EMPTY_DESTINATION_ADDRESS` | STOP | SEND or SWAP requests omit a destination address. |
+| `SECURITY_SEED_OR_PRIVATE_KEY_REQUEST` | STOP | The request appears to seek a seed phrase or private key. |
 | `TOKEN_UNSUPPORTED_DESTINATION_NETWORK` | STOP | Asset is not supported on the chosen destination network in the registry. |
 | `TOKEN_UNKNOWN_FAMILIAR_SYMBOL` | STOP | Unknown token uses a familiar symbol such as USDC. |
 | `SIGN_UNEXPECTED_AIRDROP_INTERACTION` | STOP | Signature touches an unsolicited or unexpected airdrop contract. |
-| `APPROVAL_UNLIMITED_ALLOWANCE` | STOP | Approval grants unlimited/infinite/max allowance. |
-| `SWAP_HIGH_SLIPPAGE` | REVIEW | Swap slippage is above 5%. |
+| `APPROVAL_UNLIMITED_ALLOWANCE` | STOP | Approval grants unlimited/infinite/max/uint256::MAX allowance. |
+| `SWAP_SLIPPAGE_REVIEW` | REVIEW | Swap slippage is greater than 3% through 10%. |
+| `SWAP_SLIPPAGE_STOP` | STOP | Swap slippage is greater than 10%. |
 | `READY_INTENT_MATCH` | READY | No deterministic warning or stop rule fired. |
 
 ## Corrected primary XRP scenario
@@ -47,7 +59,7 @@ Explanation displayed by the engine:
 
 > The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.
 
-A separate missing-tag test validates `TRANSFER_MISSING_DESTINATION_TAG`.
+A separate missing-tag test validates `TRANSFER_MISSING_DESTINATION_TAG`, and a registry-derived expected tag path verifies the deposit registry is used as the trusted source.
 
 ## Demo scenarios
 

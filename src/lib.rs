@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::{self, Read};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -118,6 +119,9 @@ impl Default for Registries {
         for (id, display_name) in [
             ("xrpl", "XRP Ledger"),
             ("ethereum", "Ethereum"),
+            ("base", "Base"),
+            ("bnb-smart-chain", "BNB Smart Chain"),
+            ("stellar", "Stellar"),
             ("polygon", "Polygon"),
             ("solana", "Solana"),
         ] {
@@ -133,11 +137,27 @@ impl Default for Registries {
             },
         );
         tokens.insert(
+            "xlm:xlm",
+            Token {
+                symbol: "XLM",
+                identifier: "xlm:xlm",
+                networks: HashSet::from(["stellar"]),
+            },
+        );
+        tokens.insert(
             "eth:usdc",
             Token {
                 symbol: "USDC",
                 identifier: "eth:usdc",
-                networks: HashSet::from(["ethereum", "polygon"]),
+                networks: HashSet::from(["ethereum", "base"]),
+            },
+        );
+        tokens.insert(
+            "eth:eth",
+            Token {
+                symbol: "ETH",
+                identifier: "eth:eth",
+                networks: HashSet::from(["ethereum", "base"]),
             },
         );
         tokens.insert(
@@ -178,7 +198,7 @@ impl Default for Registries {
                 },
             ),
         ]);
-        let familiar_symbols = HashSet::from(["USDC", "USDT", "ETH", "BTC", "XRP", "SOL"]);
+        let familiar_symbols = HashSet::from(["USDC", "USDT", "ETH", "BTC", "XRP", "SOL", "XLM"]);
         Self {
             networks,
             tokens,
@@ -192,6 +212,7 @@ impl Default for Registries {
 
 pub fn evaluate(intent: &Intent, registries: &Registries) -> Evaluation {
     let mut hits = Vec::new();
+    security_rules(intent, &mut hits);
     transfer_rules(intent, registries, &mut hits);
     token_swap_rules(intent, registries, &mut hits);
     signature_rules(intent, registries, &mut hits);
@@ -223,15 +244,219 @@ fn hit(id: &str, decision: Decision, explanation: &str, step: &str) -> RuleHit {
         recommended_next_step: step.into(),
     }
 }
+
 fn norm(s: &Option<String>) -> Option<String> {
     s.as_ref()
         .map(|v| v.trim().to_ascii_lowercase())
         .filter(|v| !v.is_empty())
 }
 
-fn transfer_rules(i: &Intent, _r: &Registries, hits: &mut Vec<RuleHit>) {
+fn normalize_text(value: &str) -> String {
+    value
+        .trim()
+        .to_ascii_lowercase()
+        .replace([' ', '-', '_'], "")
+}
+
+fn network_matches(candidate: &str, profile_network: &str, registries: &Registries) -> bool {
+    let normalized_candidate = normalize_text(candidate);
+    let normalized_profile = normalize_text(profile_network);
+    registries.networks.values().any(|network| {
+        let network_id = normalize_text(network.id);
+        let display_name = normalize_text(network.display_name);
+        (network_id == normalized_candidate || display_name == normalized_candidate)
+            && (network_id == normalized_profile || display_name == normalized_profile)
+    })
+}
+
+fn resolved_expected_tag(intent: &Intent, registries: &Registries) -> Option<String> {
+    let destination_address = intent
+        .destination_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let network_matches = intent
+        .destination_network
+        .as_deref()
+        .is_some_and(|network| {
+            registries.deposits.iter().any(|deposit| {
+                deposit
+                    .destination_address
+                    .eq_ignore_ascii_case(destination_address)
+                    && network_matches(network, deposit.network, registries)
+            })
+        })
+        || intent.source_network.as_deref().is_some_and(|network| {
+            registries.deposits.iter().any(|deposit| {
+                deposit
+                    .destination_address
+                    .eq_ignore_ascii_case(destination_address)
+                    && network_matches(network, deposit.network, registries)
+            })
+        });
+    if network_matches {
+        return registries.deposits.iter().find_map(|deposit| {
+            if deposit
+                .destination_address
+                .eq_ignore_ascii_case(destination_address)
+            {
+                deposit.expected_tag_or_memo.map(str::to_string)
+            } else {
+                None
+            }
+        });
+    }
+    intent.expected_destination_tag_or_memo.clone()
+}
+
+fn contains_sensitive_request(value: &str) -> bool {
+    let lowered = value.to_ascii_lowercase();
+    lowered.contains("seed phrase")
+        || lowered.contains("seed-phrase")
+        || lowered.contains("mnemonic")
+        || lowered.contains("recovery phrase")
+        || lowered.contains("private key")
+        || lowered.contains("private-key")
+        || lowered.contains("privkey")
+}
+
+fn is_uint256_max(value: &str) -> bool {
+    let trimmed = value.trim();
+    let bytes = if let Some(hex) = trimmed.strip_prefix("0x") {
+        parse_hex_to_le_bytes(hex)
+    } else {
+        parse_decimal_to_le_bytes(trimmed)
+    };
+    bytes.map(|value| value == vec![0xff; 32]).unwrap_or(false)
+}
+
+fn parse_decimal_to_le_bytes(value: &str) -> Option<Vec<u8>> {
+    let mut bytes = vec![0_u8];
+    for ch in value.chars() {
+        let digit = ch.to_digit(10)? as u16;
+        let mut carry = digit;
+        for byte in &mut bytes {
+            let sum = (*byte as u16) * 10 + carry;
+            *byte = (sum & 0xff) as u8;
+            carry = sum >> 8;
+        }
+        while carry > 0 {
+            bytes.push((carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    Some(normalize_le_bytes(bytes))
+}
+
+fn parse_hex_to_le_bytes(value: &str) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut current = 0_u8;
+    let mut nibble_index = 0_u8;
+    for ch in value.chars() {
+        let nibble = ch.to_digit(16)? as u8;
+        if nibble_index.is_multiple_of(2) {
+            current = nibble << 4;
+        } else {
+            current |= nibble;
+            bytes.push(current);
+        }
+        nibble_index += 1;
+    }
+    if nibble_index % 2 == 1 {
+        bytes.push(current);
+    }
+    Some(normalize_le_bytes(bytes))
+}
+
+fn normalize_le_bytes(mut bytes: Vec<u8>) -> Vec<u8> {
+    while bytes.len() > 1 && bytes.last() == Some(&0) {
+        bytes.pop();
+    }
+    bytes
+}
+
+pub fn parse_http_request<R: Read>(reader: &mut R) -> io::Result<(String, String)> {
+    let mut buffer = Vec::new();
+    let mut read_buf = [0_u8; 4096];
+    loop {
+        let bytes_read = reader.read(&mut read_buf)?;
+        if bytes_read == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&read_buf[..bytes_read]);
+        if let Some(header_end) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
+            let header_bytes = buffer[..header_end].to_vec();
+            let body_start = header_end + 4;
+            let mut body = buffer[body_start..].to_vec();
+            let header_text = String::from_utf8_lossy(&header_bytes).into_owned();
+            if let Some(content_length) = parse_content_length(&header_text) {
+                while body.len() < content_length {
+                    let bytes_read = reader.read(&mut read_buf)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    body.extend_from_slice(&read_buf[..bytes_read]);
+                }
+            }
+            return Ok((header_text, String::from_utf8_lossy(&body).into_owned()));
+        }
+    }
+    let header = String::from_utf8_lossy(&buffer).into_owned();
+    Ok((header, String::new()))
+}
+
+fn parse_content_length(header_text: &str) -> Option<usize> {
+    header_text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Content-Length:"))
+        .and_then(|value| value.trim().parse::<usize>().ok())
+}
+
+fn security_rules(intent: &Intent, hits: &mut Vec<RuleHit>) {
+    let values = [
+        intent.source_network.as_deref(),
+        intent.destination_network.as_deref(),
+        intent.asset_symbol.as_deref(),
+        intent.asset_identifier.as_deref(),
+        intent.destination_address.as_deref(),
+        intent.expected_destination_address.as_deref(),
+        intent.entered_destination_tag_or_memo.as_deref(),
+        intent.expected_destination_tag_or_memo.as_deref(),
+        intent.contract_address.as_deref(),
+        intent.approval_amount_or_scope.as_deref(),
+        intent.transaction_origin.as_deref(),
+    ];
+    if values
+        .iter()
+        .any(|value| value.is_some_and(contains_sensitive_request))
+    {
+        hits.push(hit(
+            "SECURITY_SEED_OR_PRIVATE_KEY_REQUEST",
+            Decision::Stop,
+            "The request appears to seek a seed phrase or private key, which SendSure does not support.",
+            "Do not continue and keep the seed phrase or private key private.",
+        ));
+    }
+}
+
+fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) {
+    if matches!(i.action_type, ActionType::Send | ActionType::Swap) {
+        let has_destination = i
+            .destination_address
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty());
+        if !has_destination {
+            hits.push(hit(
+                "TRANSFER_EMPTY_DESTINATION_ADDRESS",
+                Decision::Stop,
+                "A destination address is required for SEND or SWAP requests.",
+                "Provide the destination address before continuing.",
+            ));
+        }
+    }
     if let (Some(a), Some(e)) = (&i.destination_address, &i.expected_destination_address) {
-        if a != e {
+        if a.trim() != e.trim() {
             hits.push(hit(
                 "TRANSFER_DESTINATION_ADDRESS_MISMATCH",
                 Decision::Stop,
@@ -241,15 +466,18 @@ fn transfer_rules(i: &Intent, _r: &Registries, hits: &mut Vec<RuleHit>) {
         }
     }
     if i.action_type == ActionType::Send {
-        if let Some(expected) = &i.expected_destination_tag_or_memo {
+        let expected = resolved_expected_tag(i, registries);
+        if expected.is_some() {
             match &i.entered_destination_tag_or_memo {
                 None => hits.push(hit("TRANSFER_MISSING_DESTINATION_TAG", Decision::Stop, "A destination tag or memo is required for this deposit account but was not entered.", "Do not send until the required tag or memo is added.")),
-                Some(entered) if entered != expected => hits.push(hit("TRANSFER_DESTINATION_TAG_MISMATCH", Decision::Stop, "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.", "Verify the deposit profile in the exchange and correct the destination tag before sending.")),
+                Some(entered) if entered.trim().is_empty() => hits.push(hit("TRANSFER_MISSING_DESTINATION_TAG", Decision::Stop, "A destination tag or memo is required for this deposit account but was not entered.", "Do not send until the required tag or memo is added.")),
+                Some(entered) if entered != expected.as_deref().unwrap_or_default() => hits.push(hit("TRANSFER_DESTINATION_TAG_MISMATCH", Decision::Stop, "The destination tag does not match the expected deposit tag for this account. Do not send until the deposit details are verified.", "Verify the deposit profile in the exchange and correct the destination tag before sending.")),
                 _ => {}
             }
         }
     }
 }
+
 fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if let Some(id) = norm(&i.asset_identifier) {
         if let Some(token) = r.tokens.get(id.as_str()) {
@@ -268,17 +496,27 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     }
     if i.action_type == ActionType::Swap {
         if let Some(slip) = i.swap_slippage_percent {
-            if slip > 5.0 {
+            if slip <= 3.0 {
+                // READY threshold: 0% through 3%.
+            } else if slip <= 10.0 {
                 hits.push(hit(
-                    "SWAP_HIGH_SLIPPAGE",
+                    "SWAP_SLIPPAGE_REVIEW",
                     Decision::Review,
-                    "The swap slippage is high enough to materially change the received amount.",
+                    "The swap slippage is above the READY threshold and needs review.",
                     "Review price impact and lower slippage if this was not intentional.",
+                ));
+            } else {
+                hits.push(hit(
+                    "SWAP_SLIPPAGE_STOP",
+                    Decision::Stop,
+                    "The swap slippage is above the acceptable threshold.",
+                    "Do not proceed with this swap at the current slippage.",
                 ));
             }
         }
     }
 }
+
 fn signature_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if i.action_type == ActionType::Sign && i.asset_was_unsolicited {
         if let Some(c) = &i.contract_address {
@@ -292,6 +530,7 @@ fn signature_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
         }
     }
 }
+
 fn approval_rules(i: &Intent, hits: &mut Vec<RuleHit>) {
     if i.action_type == ActionType::Approve {
         if let Some(scope) = &i.approval_amount_or_scope {
@@ -299,6 +538,9 @@ fn approval_rules(i: &Intent, hits: &mut Vec<RuleHit>) {
             if ["unlimited", "infinite", "max", "maximum"]
                 .iter()
                 .any(|w| s.contains(w))
+                || s.contains("uint256::max")
+                || s.contains("u256::max")
+                || is_uint256_max(scope)
             {
                 hits.push(hit(
                     "APPROVAL_UNLIMITED_ALLOWANCE",
@@ -323,7 +565,7 @@ pub fn demo_scenarios() -> Vec<Scenario> {
         scenario(
             "XRP destination tag mismatch",
             Decision::Stop,
-            xrp_intent(Some("482109"), Some("482901")),
+            xrp_intent(Some("482109"), None),
         ),
         scenario(
             "USDC unsupported destination network",
@@ -384,6 +626,8 @@ pub fn demo_scenarios() -> Vec<Scenario> {
                 destination_network: Some("ethereum".into()),
                 asset_symbol: Some("DEMO".into()),
                 asset_identifier: Some("eth:demo".into()),
+                destination_address: Some("0xDemoRecipient".into()),
+                expected_destination_address: Some("0xDemoRecipient".into()),
                 swap_slippage_percent: Some(7.0),
                 contract_address: Some("0xDemoSwapRouter".into()),
                 ..basic(ActionType::Swap)
@@ -392,10 +636,11 @@ pub fn demo_scenarios() -> Vec<Scenario> {
         scenario(
             "Valid XRP with the correct destination tag",
             Decision::Ready,
-            xrp_intent(Some("482901"), Some("482901")),
+            xrp_intent(Some("482901"), None),
         ),
     ]
 }
+
 fn scenario(name: &str, expected_decision: Decision, intent: Intent) -> Scenario {
     Scenario {
         name: name.into(),
@@ -403,6 +648,7 @@ fn scenario(name: &str, expected_decision: Decision, intent: Intent) -> Scenario
         expected_decision,
     }
 }
+
 fn basic(action_type: ActionType) -> Intent {
     Intent {
         action_type,
@@ -421,6 +667,7 @@ fn basic(action_type: ActionType) -> Intent {
         asset_was_unsolicited: false,
     }
 }
+
 fn xrp_intent(entered: Option<&str>, expected: Option<&str>) -> Intent {
     Intent {
         action_type: ActionType::Send,
