@@ -94,6 +94,14 @@ fn demo_scenarios_follow_expected_decisions() {
 }
 
 #[test]
+fn scenario_three_reports_unknown_familiar_symbol_rule() {
+    let scenario = &demo_scenarios()[2];
+    let result = evaluate(&scenario.intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_FAMILIAR_SYMBOL");
+}
+
+#[test]
 fn seven_demo_scenarios_have_required_summary() {
     let scenarios = demo_scenarios();
     let decisions: Vec<_> = scenarios
@@ -199,23 +207,24 @@ fn network_aliases_and_display_names_are_resolved_for_supported_tokens() {
             networks: std::collections::HashSet::from(["bnb-smart-chain"]),
         },
     );
-    for (network_input, asset_identifier) in [
-        ("xrpl", "xrp:xrp"),
-        ("XRP Ledger", "xrp:xrp"),
-        ("ethereum", "eth:usdc"),
-        ("Ethereum", "eth:usdc"),
-        ("base", "eth:usdc"),
-        ("Base", "eth:usdc"),
-        ("stellar", "xlm:xlm"),
-        ("Stellar", "xlm:xlm"),
-        ("  XrPl  ", "xrp:xrp"),
-        ("  Ethereum  ", "eth:usdc"),
-        ("bsc", "demo:bsc"),
-        ("BNB Smart Chain", "demo:bsc"),
-        ("  BSC  ", "demo:bsc"),
+    for (network_input, asset_identifier, asset_symbol) in [
+        ("xrpl", "xrp:xrp", "XRP"),
+        ("XRP Ledger", "xrp:xrp", "XRP"),
+        ("ethereum", "eth:usdc", "USDC"),
+        ("Ethereum", "eth:usdc", "USDC"),
+        ("base", "eth:usdc", "USDC"),
+        ("Base", "eth:usdc", "USDC"),
+        ("stellar", "xlm:xlm", "XLM"),
+        ("Stellar", "xlm:xlm", "XLM"),
+        ("  XrPl  ", "xrp:xrp", "XRP"),
+        ("  Ethereum  ", "eth:usdc", "USDC"),
+        ("bsc", "demo:bsc", "DEMO"),
+        ("BNB Smart Chain", "demo:bsc", "DEMO"),
+        ("  BSC  ", "demo:bsc", "DEMO"),
     ] {
         let intent = Intent {
             action_type: ActionType::Send,
+            asset_symbol: Some(asset_symbol.to_string()),
             asset_identifier: Some(asset_identifier.to_string()),
             destination_network: Some(network_input.to_string()),
             destination_address: Some("0xDemoRecipient".to_string()),
@@ -610,4 +619,82 @@ fn ready_for_basic_matching_transfer() {
     };
     let result = evaluate(&intent, &registry());
     assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn known_token_identifier_with_matching_symbol_is_allowed() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some(" usdc ".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn known_token_identifier_with_mismatched_symbol_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:eth".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_ASSET_SYMBOL_MISMATCH");
+}
+
+#[test]
+fn known_usdc_identifier_with_eth_symbol_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("ETH".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_ASSET_SYMBOL_MISMATCH");
+}
+
+#[test]
+fn exact_case_xrpl_deposit_address_matches_profile() {
+    let intent = Intent {
+        expected_destination_tag_or_memo: None,
+        entered_destination_tag_or_memo: Some("482901".to_string()),
+        destination_address: Some("rDemoExchangeAddress".to_string()),
+        ..demo_scenarios()[6].intent.clone()
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn different_case_xrpl_deposit_address_does_not_inherit_expected_tag() {
+    let intent = Intent {
+        expected_destination_tag_or_memo: None,
+        entered_destination_tag_or_memo: Some("482901".to_string()),
+        destination_address: Some("rdemoexchangeaddress".to_string()),
+        ..demo_scenarios()[6].intent.clone()
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TRANSFER_DESTINATION_ADDRESS_MISMATCH"
+    );
 }

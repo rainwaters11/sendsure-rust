@@ -289,6 +289,21 @@ fn network_matches(candidate: &str, profile_network: &str, registries: &Registri
         .is_some_and(|candidate_id| profile_id.is_some_and(|profile_id| candidate_id == profile_id))
 }
 
+fn destination_matches_profile(
+    destination_address: &str,
+    deposit: &DepositProfile,
+    registries: &Registries,
+) -> bool {
+    let is_xrpl = canonical_network_id(deposit.network, registries) == Some("xrpl");
+    if is_xrpl {
+        destination_address == deposit.destination_address
+    } else {
+        deposit
+            .destination_address
+            .eq_ignore_ascii_case(destination_address)
+    }
+}
+
 fn resolved_expected_tag(intent: &Intent, registries: &Registries) -> Option<String> {
     let destination_address = intent
         .destination_address
@@ -300,26 +315,19 @@ fn resolved_expected_tag(intent: &Intent, registries: &Registries) -> Option<Str
         .as_deref()
         .is_some_and(|network| {
             registries.deposits.iter().any(|deposit| {
-                deposit
-                    .destination_address
-                    .eq_ignore_ascii_case(destination_address)
+                destination_matches_profile(destination_address, deposit, registries)
                     && network_matches(network, deposit.network, registries)
             })
         })
         || intent.source_network.as_deref().is_some_and(|network| {
             registries.deposits.iter().any(|deposit| {
-                deposit
-                    .destination_address
-                    .eq_ignore_ascii_case(destination_address)
+                destination_matches_profile(destination_address, deposit, registries)
                     && network_matches(network, deposit.network, registries)
             })
         });
     if network_matches {
         return registries.deposits.iter().find_map(|deposit| {
-            if deposit
-                .destination_address
-                .eq_ignore_ascii_case(destination_address)
-            {
+            if destination_matches_profile(destination_address, deposit, registries) {
                 deposit
                     .expected_tag_or_memo
                     .map(str::trim)
@@ -525,6 +533,17 @@ fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) 
 fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if let Some(id) = norm(&i.asset_identifier) {
         if let Some(token) = r.tokens.get(id.as_str()) {
+            if let Some(sym) = &i.asset_symbol {
+                let symbol = sym.trim().to_ascii_uppercase();
+                if !symbol.is_empty() && symbol != token.symbol {
+                    hits.push(hit(
+                        "TOKEN_ASSET_SYMBOL_MISMATCH",
+                        Decision::Stop,
+                        "The stated asset symbol does not match the registered token identifier.",
+                        "Do not continue until the asset symbol and identifier match.",
+                    ));
+                }
+            }
             let destination_network = i
                 .destination_network
                 .as_deref()
@@ -685,6 +704,7 @@ pub fn demo_scenarios() -> Vec<Scenario> {
             "Unknown token using a familiar symbol",
             Decision::Stop,
             Intent {
+                destination_address: Some("0xLookalikeRecipient".into()),
                 asset_symbol: Some("USDC".into()),
                 asset_identifier: Some("unknown:usdc".into()),
                 ..basic(ActionType::Send)
