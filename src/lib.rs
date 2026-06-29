@@ -562,6 +562,24 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
                         None
                     }
                 }
+            } else if matches!(i.action_type, ActionType::Send | ActionType::Swap) {
+                let source_network = i
+                    .source_network
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+                match source_network.and_then(|network| canonical_network_id(network, r)) {
+                    Some(network_id) => Some(network_id),
+                    None => {
+                        hits.push(hit(
+                            "TOKEN_UNKNOWN_SOURCE_NETWORK",
+                            Decision::Stop,
+                            "The source network is required and must be recognized when destination network is not provided.",
+                            "Provide a supported source network before continuing.",
+                        ));
+                        None
+                    }
+                }
             } else {
                 i.source_network
                     .as_deref()

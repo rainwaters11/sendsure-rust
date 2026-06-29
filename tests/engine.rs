@@ -312,6 +312,109 @@ fn blank_destination_network_can_fallback_to_source_network() {
 }
 
 #[test]
+fn blank_destination_network_can_fallback_to_display_name_source_network() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("Ethereum".to_string()),
+        destination_network: Some("   ".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn blank_destination_network_can_fallback_to_xrpl_display_name_source_network() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("XRP Ledger".to_string()),
+        destination_network: Some("   ".to_string()),
+        asset_symbol: Some("XRP".to_string()),
+        asset_identifier: Some("xrp:xrp".to_string()),
+        destination_address: Some("rDemoExchangeAddress".to_string()),
+        expected_destination_address: Some("rDemoExchangeAddress".to_string()),
+        entered_destination_tag_or_memo: Some("482901".to_string()),
+        expected_destination_tag_or_memo: Some("482901".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn blank_destination_network_with_unknown_source_network_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("tron".to_string()),
+        destination_network: Some("   ".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
+fn blank_destination_network_with_misspelled_source_network_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("etherum".to_string()),
+        destination_network: Some("   ".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
+fn missing_both_networks_for_registered_send_token_stops() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: None,
+        destination_network: None,
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
+fn missing_both_networks_for_registered_swap_token_stops() {
+    let intent = Intent {
+        action_type: ActionType::Swap,
+        source_network: None,
+        destination_network: None,
+        asset_symbol: Some("DEMO".to_string()),
+        asset_identifier: Some("eth:demo".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        swap_slippage_percent: Some(2.0),
+        ..basic(ActionType::Swap)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "TOKEN_UNKNOWN_SOURCE_NETWORK");
+}
+
+#[test]
 fn decimal_uint256_max_is_detected_as_unlimited_approval() {
     let mut intent = demo_scenarios()[4].intent.clone();
     intent.approval_amount_or_scope = Some(
