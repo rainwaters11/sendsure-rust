@@ -250,6 +250,59 @@ fn xrp_ledger_alias_does_not_trigger_unsupported_destination_network() {
 }
 
 #[test]
+fn unknown_destination_network_does_not_fallback_to_source_network_for_usdc() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("tron".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TOKEN_UNKNOWN_DESTINATION_NETWORK"
+    );
+}
+
+#[test]
+fn misspelled_destination_network_stops_eth_transfer() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("etherum".to_string()),
+        asset_identifier: Some("eth:eth".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TOKEN_UNKNOWN_DESTINATION_NETWORK"
+    );
+}
+
+#[test]
+fn blank_destination_network_can_fallback_to_source_network() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("   ".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
 fn decimal_uint256_max_is_detected_as_unlimited_approval() {
     let mut intent = demo_scenarios()[4].intent.clone();
     intent.approval_amount_or_scope = Some(
@@ -266,6 +319,36 @@ fn hex_uint256_max_is_detected_as_unlimited_approval() {
     let mut intent = demo_scenarios()[4].intent.clone();
     intent.approval_amount_or_scope =
         Some("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");
+}
+
+#[test]
+fn hex_uint256_max_with_uppercase_prefix_is_detected_as_unlimited_approval() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope =
+        Some("0Xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");
+}
+
+#[test]
+fn hex_uint256_max_with_uppercase_digits_after_lowercase_prefix_is_detected() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope =
+        Some("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF".to_string());
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");
+}
+
+#[test]
+fn hex_uint256_max_with_uppercase_digits_after_uppercase_prefix_is_detected() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope =
+        Some("0XFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF".to_string());
     let result = evaluate(&intent, &registry());
     assert_eq!(result.decision, Decision::Stop);
     assert_eq!(result.triggered_rule_id, "APPROVAL_UNLIMITED_ALLOWANCE");

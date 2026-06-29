@@ -351,7 +351,10 @@ fn contains_sensitive_request(value: &str) -> bool {
 
 fn is_uint256_max(value: &str) -> bool {
     let trimmed = value.trim();
-    let bytes = if let Some(hex) = trimmed.strip_prefix("0x") {
+    let bytes = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         parse_hex_to_le_bytes(hex)
     } else {
         parse_decimal_to_le_bytes(trimmed)
@@ -522,16 +525,30 @@ fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) 
 fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if let Some(id) = norm(&i.asset_identifier) {
         if let Some(token) = r.tokens.get(id.as_str()) {
-            if let Some(network_id) = i
+            let destination_network = i
                 .destination_network
                 .as_deref()
-                .and_then(|network| canonical_network_id(network, r))
-                .or_else(|| {
-                    i.source_network
-                        .as_deref()
-                        .and_then(|network| canonical_network_id(network, r))
-                })
-            {
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
+            let resolved_network = if let Some(destination_network) = destination_network {
+                match canonical_network_id(destination_network, r) {
+                    Some(network_id) => Some(network_id),
+                    None => {
+                        hits.push(hit(
+                            "TOKEN_UNKNOWN_DESTINATION_NETWORK",
+                            Decision::Stop,
+                            "The destination network is not recognized in SendSure's network registry.",
+                            "Correct the destination network before continuing.",
+                        ));
+                        None
+                    }
+                }
+            } else {
+                i.source_network
+                    .as_deref()
+                    .and_then(|network| canonical_network_id(network, r))
+            };
+            if let Some(network_id) = resolved_network {
                 if !token.networks.contains(network_id) {
                     hits.push(hit("TOKEN_UNSUPPORTED_DESTINATION_NETWORK", Decision::Stop, "The selected asset is not supported on the destination network in SendSure's registry.", "Choose a supported network for this asset before continuing."));
                 }
