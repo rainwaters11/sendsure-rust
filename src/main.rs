@@ -841,7 +841,9 @@ mod tests {
             "browser tab should load favicon from /favicon.ico"
         );
         assert!(
-            INDEX_HTML.contains("<link rel=\"icon\" href=\"/assets/sendsure-mark.svg\" type=\"image/svg+xml\">"),
+            INDEX_HTML.contains(
+                "<link rel=\"icon\" href=\"/assets/sendsure-mark.svg\" type=\"image/svg+xml\">"
+            ),
             "svg favicon should reference the approved shield mark"
         );
     }
