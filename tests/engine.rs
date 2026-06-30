@@ -774,16 +774,18 @@ fn parsing_http_request_handles_split_body() {
         }
     }
 
-    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 16\r\n\r\n{\"hello\":\"x\"}";
+    let request =
+        b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 13\r\n\r\n{\"hello\":\"x\"}";
     let mut reader = ChunkedReader::new(request.to_vec(), 5);
     let (header, body) = parse_http_request(&mut reader).unwrap();
-    assert!(header.contains("Content-Length: 16"));
+    assert!(header.contains("Content-Length: 13"));
     assert_eq!(body, "{\"hello\":\"x\"}");
 }
 
 #[test]
 fn parsing_http_request_handles_lowercase_content_length_header() {
-    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\ncontent-length: 16\r\n\r\n{\"hello\":\"x\"}";
+    let request =
+        b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\ncontent-length: 13\r\n\r\n{\"hello\":\"x\"}";
     let mut reader = std::io::Cursor::new(request.as_slice());
     let (_header, body) = parse_http_request(&mut reader).unwrap();
     assert_eq!(body, "{\"hello\":\"x\"}");
@@ -791,10 +793,37 @@ fn parsing_http_request_handles_lowercase_content_length_header() {
 
 #[test]
 fn parsing_http_request_handles_mixed_case_content_length_header() {
-    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nCoNtEnT-LeNgTh: 16\r\n\r\n{\"hello\":\"x\"}";
+    let request =
+        b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nCoNtEnT-LeNgTh: 13\r\n\r\n{\"hello\":\"x\"}";
     let mut reader = std::io::Cursor::new(request.as_slice());
     let (_header, body) = parse_http_request(&mut reader).unwrap();
     assert_eq!(body, "{\"hello\":\"x\"}");
+}
+
+#[test]
+fn parsing_http_request_returns_exact_content_length_bytes() {
+    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 13\r\n\r\n{\"hello\":\"x\"}";
+    let mut reader = std::io::Cursor::new(request.as_slice());
+    let (_header, body) = parse_http_request(&mut reader).unwrap();
+    assert_eq!(body, "{\"hello\":\"x\"}");
+    assert_eq!(body.len(), 13);
+}
+
+#[test]
+fn parsing_http_request_ignores_trailing_pipelined_bytes() {
+    let request = b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 13\r\n\r\n{\"hello\":\"x\"}GET /health HTTP/1.1\r\nHost: example\r\n\r\n";
+    let mut reader = std::io::Cursor::new(request.as_slice());
+    let (_header, body) = parse_http_request(&mut reader).unwrap();
+    assert_eq!(body, "{\"hello\":\"x\"}");
+}
+
+#[test]
+fn parsing_http_request_rejects_incomplete_body() {
+    let request =
+        b"POST /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 13\r\n\r\n{\"hello\":\"";
+    let mut reader = std::io::Cursor::new(request.as_slice());
+    let error = parse_http_request(&mut reader).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
 }
 
 #[test]

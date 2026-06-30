@@ -433,10 +433,14 @@ pub fn parse_http_request<R: Read>(reader: &mut R) -> io::Result<(String, String
                 while body.len() < content_length {
                     let bytes_read = reader.read(&mut read_buf)?;
                     if bytes_read == 0 {
-                        break;
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            "incomplete HTTP body for declared Content-Length",
+                        ));
                     }
                     body.extend_from_slice(&read_buf[..bytes_read]);
                 }
+                body.truncate(content_length);
             }
             return Ok((header_text, String::from_utf8_lossy(&body).into_owned()));
         }
