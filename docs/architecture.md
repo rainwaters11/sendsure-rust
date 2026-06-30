@@ -1,11 +1,5 @@
 # SendSure Architecture Review
 
-Post-demo modularization plan for the SendSure Rust codebase. This document describes the current system, recommended module boundaries, risks in the present layout, a safe step-by-step migration sequence, and suggestions for testing and server resilience.
-
-**Scope:** Documentation only. No runtime behavior changes are proposed here.
-
-**Owner:** Aman
-
 ---
 
 ## 1. Current System Overview
@@ -16,10 +10,10 @@ The codebase today is split across two source files:
 
 | File | Role |
 | --- | --- |
-| `src/lib.rs` (~909 lines) | Domain models, registries, rule engine, HTTP request parser, demo scenarios |
-| `src/main.rs` (~933 lines) | CLI entry, HTTP server, embedded frontend (HTML/CSS/JS), server integration tests |
+| `src/lib.rs` | Domain models, registries, rule engine, HTTP request parser, demo scenarios |
+| `src/main.rs` | CLI entry, HTTP server, embedded frontend (HTML/CSS/JS), server integration tests |
 
-Integration tests live in `tests/engine.rs` (~1,036 lines). Server smoke tests live in `src/main.rs` under `#[cfg(test)]`.
+Integration tests live in `tests/engine.rs`. Server  tests live in `src/main.rs`.
 
 ---
 
@@ -31,7 +25,7 @@ Integration tests live in `tests/engine.rs` (~1,036 lines). Server smoke tests l
 main()
   └─ run_demo()
        ├─ Registries::default()
-       ├─ demo_scenarios()          // seven fixed scenarios from lib.rs
+       ├─ demo_scenarios()          
        └─ for each scenario:
             evaluate(intent, registries)
               ├─ security_rules
@@ -51,18 +45,18 @@ The CLI path is read-only with respect to the network. It exercises the same `ev
 ```
 main()
   └─ serve("127.0.0.1:8080")
-       └─ TcpListener::bind → for each connection:
+       └─ TcpListener::bind -? for each connection:
             handle_client(stream)
               ├─ parse_http_request(stream)   // lib.rs
               └─ route by request line prefix:
-                   OPTIONS /api/evaluate  → 204 + CORS headers
-                   GET  /health           → {"status":"ok"}
-                   GET  /api/scenarios    → demo_scenarios() JSON
-                   POST /api/evaluate     → deserialize Intent → evaluate() → JSON
-                   GET  /                 → embedded INDEX_HTML
-                   GET  /app.js           → embedded APP_JS
-                   GET  /styles.css       → embedded STYLES_CSS
-                   *                      → 404 JSON
+                   OPTIONS /api/evaluate  -> 204 + CORS headers
+                   GET  /health           -> {"status":"ok"}
+                   GET  /api/scenarios    -> demo_scenarios() JSON
+                   POST /api/evaluate     -> deserialize Intent -> evaluate() -> JSON
+                   GET  /                 -> embedded INDEX_HTML
+                   GET  /app.js           -> embedded APP_JS
+                   GET  /styles.css       -> embedded STYLES_CSS
+                   *                      -> 404 JSON
 ```
 
 The server is a single-threaded, blocking TCP loop. Each request is handled synchronously on the accepting thread. Responses include `Access-Control-Allow-Origin: *` for browser access.
@@ -82,15 +76,15 @@ Invalid JSON on `POST /api/evaluate` returns `400` with `{"error":"..."}`.
 
 `evaluate(intent, registries)` collects rule hits from five rule groups, then applies precedence:
 
-1. **Security** — seed phrase / private key detection in any intent field
-2. **Transfer** — empty destination, address mismatch, XRP tag/memo validation
-3. **Token / swap** — registry lookups, network support, slippage thresholds
-4. **Signature** — unsolicited airdrop / untrusted contract on `SIGN`
-5. **Approval** — missing scope, unlimited allowance detection
+1. **Security** :  seed phrase / private key detection in any intent field
+2. **Transfer** :  empty destination, address mismatch, XRP tag/memo validation
+3. **Token / swap** :  registry lookups, network support, slippage thresholds
+4. **Signature** :  unsolicited airdrop / untrusted contract on `SIGN`
+5. **Approval** :  missing scope, unlimited allowance detection
 
 If no rule fires, the engine adds `READY_INTENT_MATCH`. Hits are sorted by decision priority (`STOP` > `REVIEW` > `READY`); the highest-priority hit becomes `triggered_rule_id`.
 
-### 2.5 Demo scenarios (protected outcomes)
+### 2.5 Demo scenarios
 
 These seven scenarios and their decisions must not change during modularization:
 
@@ -104,7 +98,8 @@ These seven scenarios and their decisions must not change during modularization:
 | 6 | High-slippage swap at 7% | REVIEW | `SWAP_SLIPPAGE_REVIEW` |
 | 7 | Valid XRP with the correct destination tag | READY | `READY_INTENT_MATCH` |
 
-Summary: **STOP: 5, REVIEW: 1, READY: 1**.
+Summary: **STOP: 5, REVIEW: 1, READY: 1**. 
+It must persist after all the changes.
 
 ### 2.6 Frontend flow
 
@@ -136,16 +131,16 @@ The current `lib.rs` mixes six concerns. The recommended split:
 
 | Module | Responsibility | Current location |
 | --- | --- | --- |
-| `models` | `Decision`, `ActionType`, `Intent`, `Evaluation`, `RuleHit`, `Scenario` | `lib.rs` lines 5–75, 775–780 |
-| `registries` | `Network`, `Token`, `Exchange`, `DepositProfile`, `ContractProfile`, `Registries` and `Default` impl | `lib.rs` lines 77–219 |
-| `engine` | `evaluate()`, decision precedence, `hit()` helper | `lib.rs` lines 221–245 |
-| `rules` | `security_rules`, `transfer_rules`, `token_swap_rules`, `signature_rules`, `approval_rules` | `lib.rs` lines 495–773 |
-| `validators` | Normalization helpers: `norm`, `normalize_text`, `canonical_network_id`, `destination_addresses_match`, `is_uint256_max`, etc. | `lib.rs` lines 256–447 |
-| `scenarios` | `demo_scenarios()`, scenario builders (`xrp_intent`, `basic`, `scenario`) | `lib.rs` lines 782–908 |
-| `http` | `parse_http_request`, `parse_content_length` | `lib.rs` lines 449–493 |
-| `server` | `serve`, `handle_client`, route dispatch | `main.rs` lines 43–118 |
-| `frontend` | Embedded HTML/CSS/JS assets (or external static files) | `main.rs` lines 120–750 |
-| `cli` | `run_demo()` | `main.rs` lines 16–41 |
+| `models` | `Decision`, `ActionType`, `Intent`, `Evaluation`, `RuleHit`, `Scenario` | `lib.rs` |
+| `registries` | `Network`, `Token`, `Exchange`, `DepositProfile`, `ContractProfile`, `Registries` and `Default` impl | `lib.rs` |
+| `engine` | `evaluate()`, decision precedence, `hit()` helper | `lib.rs`  |
+| `rules` | `security_rules`, `transfer_rules`, `token_swap_rules`, `signature_rules`, `approval_rules` | `lib.rs`  |
+| `validators` | Normalization helpers: `norm`, `normalize_text`, `canonical_network_id`, `destination_addresses_match`, `is_uint256_max`, etc. | `lib.rs`  |
+| `scenarios` | `demo_scenarios()`, scenario builders (`xrp_intent`, `basic`, `scenario`) | `lib.rs`  |
+| `http` | `parse_http_request`, `parse_content_length` | `lib.rs` |
+| `server` | `serve`, `handle_client`, route dispatch | `main.rs` |
+| `frontend` | Embedded HTML/CSS/JS assets (or external static files) | `main.rs`  |
+| `cli` | `run_demo()` | `main.rs`  |
 
 `main.rs` should remain a thin entry point that delegates to `cli` and `server` modules.
 
