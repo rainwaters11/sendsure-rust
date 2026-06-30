@@ -442,8 +442,7 @@ function invalidateActionEvaluationState() {
     closeOpenModals();
     result.className = 'card';
     result.textContent = actionChangedText;
-    cont.disabled = true;
-    cont.textContent = 'Continue';
+    applyContinueState();
     evaluateButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
 }
@@ -534,11 +533,40 @@ function buildIntentFromForm() {
     };
 }
 
+function applyContinueState(decision) {
+    if (decision === 'STOP') {
+        cont.disabled = true;
+        cont.textContent = 'Fix issue to continue';
+        return;
+    }
+    if (decision === 'REVIEW') {
+        cont.disabled = false;
+        cont.textContent = 'Acknowledge risk and continue';
+        return;
+    }
+    if (decision === 'READY') {
+        cont.disabled = false;
+        cont.textContent = 'Continue to wallet';
+        return;
+    }
+    cont.disabled = true;
+    cont.textContent = 'Continue';
+}
+
+function clearAllIntentFieldValues() {
+    allIntentFields.forEach((name) => {
+        if (name === 'action_type') {
+            formFields.action_type.value = 'SEND';
+            return;
+        }
+        clearFieldValue(name);
+    });
+}
+
 function setResultIdle() {
     result.className = 'card';
     result.textContent = resultDefault;
-    cont.disabled = true;
-    cont.textContent = 'Continue';
+    applyContinueState();
 }
 
 function setResultLoading() {
@@ -546,25 +574,13 @@ function setResultLoading() {
     result.textContent = evaluatingText;
     evaluateButton.disabled = true;
     evaluateButton.textContent = 'Evaluating...';
-    cont.disabled = true;
-    cont.textContent = 'Continue';
-}
-
-function continueLabel(decision) {
-    if (decision === 'READY') {
-        return 'Continue';
-    }
-    if (decision === 'REVIEW') {
-        return 'Continue with review';
-    }
-    return 'Continue';
+    applyContinueState();
 }
 
 function renderResult(payload) {
     result.className = 'card ' + payload.decision;
     result.innerHTML = `<h2>${payload.decision}</h2><p><b>Rule:</b> ${payload.triggered_rule_id}</p><p>${payload.explanation}</p><p><b>Recommended next step:</b> ${payload.recommended_next_step}</p>`;
-    cont.disabled = payload.decision === 'STOP';
-    cont.textContent = continueLabel(payload.decision);
+    applyContinueState(payload.decision);
     evaluateButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
     result.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -573,8 +589,7 @@ function renderResult(payload) {
 function renderError(message) {
     result.className = 'card';
     result.innerHTML = `<h2>Error</h2><p>${message}</p>`;
-    cont.disabled = true;
-    cont.textContent = 'Continue';
+    applyContinueState();
     evaluateButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
     result.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -627,8 +642,9 @@ async function evaluateFromForm() {
 function resetExperience() {
     clearPendingEvaluation();
     withProgrammaticUpdate(() => {
-        form.reset();
-        setActionState('SEND', { clearIrrelevant: true, focus: false });
+        HTMLFormElement.prototype.reset.call(form);
+        clearAllIntentFieldValues();
+        setActionState('SEND', { clearIrrelevant: false, focus: false });
     });
     selectedScenarioIndex = null;
     updateScenarioHighlight();
@@ -805,6 +821,13 @@ mod tests {
             "manual action changes should clear scenario highlight and pending evaluation"
         );
         assert!(
+            APP_JS.contains("function applyContinueState(decision)")
+                && APP_JS.contains("Fix issue to continue")
+                && APP_JS.contains("Acknowledge risk and continue")
+                && APP_JS.contains("Continue to wallet"),
+            "continue button label/state should be decision-driven through one shared function"
+        );
+        assert!(
             APP_JS.contains("form.addEventListener('input', handleManualFieldInput);")
                 && APP_JS.contains("form.addEventListener('change', handleManualFieldChange);"),
             "manual form edits should use shared delegated invalidation listeners"
@@ -834,11 +857,12 @@ mod tests {
         assert!(
             APP_JS.contains("function resetExperience()")
                 && APP_JS.contains("clearPendingEvaluation();")
-                && APP_JS.contains("form.reset();"),
-            "reset should call form.reset()"
+                && APP_JS.contains("HTMLFormElement.prototype.reset.call(form);")
+                && APP_JS.contains("clearAllIntentFieldValues();"),
+            "reset should invoke native form reset before clearing all fields"
         );
         assert!(
-            APP_JS.contains("setActionState('SEND', { clearIrrelevant: true, focus: false });"),
+            APP_JS.contains("setActionState('SEND', { clearIrrelevant: false, focus: false });"),
             "reset should restore SEND action tab"
         );
         assert!(
