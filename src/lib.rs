@@ -289,6 +289,37 @@ fn network_matches(candidate: &str, profile_network: &str, registries: &Registri
         .is_some_and(|candidate_id| profile_id.is_some_and(|profile_id| candidate_id == profile_id))
 }
 
+fn is_evm_network(network_id: &str) -> bool {
+    matches!(network_id, "ethereum" | "base" | "bnb-smart-chain")
+}
+
+fn normalized_context_network_id(intent: &Intent, registries: &Registries) -> Option<&'static str> {
+    intent
+        .destination_network
+        .as_deref()
+        .and_then(|network| canonical_network_id(network, registries))
+        .or_else(|| {
+            intent
+                .source_network
+                .as_deref()
+                .and_then(|network| canonical_network_id(network, registries))
+        })
+}
+
+fn destination_addresses_match(
+    intent: &Intent,
+    entered: &str,
+    expected: &str,
+    registries: &Registries,
+) -> bool {
+    let entered = entered.trim();
+    let expected = expected.trim();
+    match normalized_context_network_id(intent, registries) {
+        Some(network_id) if is_evm_network(network_id) => entered.eq_ignore_ascii_case(expected),
+        _ => entered == expected,
+    }
+}
+
 fn destination_matches_profile(
     destination_address: &str,
     deposit: &DepositProfile,
@@ -505,7 +536,7 @@ fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) 
         }
     }
     if let (Some(a), Some(e)) = (&i.destination_address, &i.expected_destination_address) {
-        if a.trim() != e.trim() {
+        if !destination_addresses_match(i, a, e, registries) {
             hits.push(hit(
                 "TRANSFER_DESTINATION_ADDRESS_MISMATCH",
                 Decision::Stop,
@@ -669,6 +700,13 @@ fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
                     "Do not proceed with this swap at the current slippage.",
                 ));
             }
+        } else {
+            hits.push(hit(
+                "SWAP_MISSING_SLIPPAGE",
+                Decision::Review,
+                "SendSure cannot complete the slippage-risk check until swap slippage tolerance is supplied.",
+                "Provide slippage tolerance before proceeding with this swap.",
+            ));
         }
     }
 }
@@ -700,7 +738,21 @@ fn signature_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
 
 fn approval_rules(i: &Intent, hits: &mut Vec<RuleHit>) {
     if i.action_type == ActionType::Approve {
-        if let Some(scope) = &i.approval_amount_or_scope {
+        let scope = i
+            .approval_amount_or_scope
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        if scope.is_none() {
+            hits.push(hit(
+                "APPROVAL_MISSING_SCOPE",
+                Decision::Stop,
+                "SendSure cannot determine whether the approval is limited or unlimited until an amount or scope is supplied.",
+                "Provide an approval amount or scope before continuing.",
+            ));
+            return;
+        }
+        if let Some(scope) = scope {
             let s = scope.to_ascii_lowercase();
             if ["unlimited", "infinite", "max", "maximum"]
                 .iter()

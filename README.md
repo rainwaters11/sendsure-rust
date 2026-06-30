@@ -38,7 +38,9 @@ Current primary rules include:
 | `TOKEN_UNSUPPORTED_DESTINATION_NETWORK` | STOP | Asset is not supported on the chosen destination network in the registry. |
 | `TOKEN_UNKNOWN_FAMILIAR_SYMBOL` | STOP | Unknown token uses a familiar symbol such as USDC. |
 | `SIGN_UNEXPECTED_AIRDROP_INTERACTION` | STOP | Signature touches an unsolicited or unexpected airdrop contract. |
+| `APPROVAL_MISSING_SCOPE` | STOP | Approval amount/scope is missing, blank, or unknown. |
 | `APPROVAL_UNLIMITED_ALLOWANCE` | STOP | Approval grants unlimited/infinite/max/uint256::MAX allowance. |
+| `SWAP_MISSING_SLIPPAGE` | REVIEW | Swap is missing slippage tolerance, so risk check is incomplete. |
 | `SWAP_SLIPPAGE_REVIEW` | REVIEW | Swap slippage is greater than 3% through 10%. |
 | `SWAP_SLIPPAGE_STOP` | STOP | Swap slippage is greater than 10%. |
 | `READY_INTENT_MATCH` | READY | No deterministic warning or stop rule fired. |

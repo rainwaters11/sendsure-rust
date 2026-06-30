@@ -172,6 +172,33 @@ fn zero_slippage_is_ready() {
 }
 
 #[test]
+fn missing_slippage_is_review() {
+    let mut intent = demo_scenarios()[5].intent.clone();
+    intent.swap_slippage_percent = None;
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Review);
+    assert_eq!(result.triggered_rule_id, "SWAP_MISSING_SLIPPAGE");
+}
+
+#[test]
+fn null_slippage_is_review() {
+    let intent = Intent {
+        action_type: ActionType::Swap,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("ethereum".to_string()),
+        asset_symbol: Some("DEMO".to_string()),
+        asset_identifier: Some("eth:demo".to_string()),
+        destination_address: Some("0xDemoRecipient".to_string()),
+        expected_destination_address: Some("0xDemoRecipient".to_string()),
+        swap_slippage_percent: None,
+        ..basic(ActionType::Swap)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Review);
+    assert_eq!(result.triggered_rule_id, "SWAP_MISSING_SLIPPAGE");
+}
+
+#[test]
 fn destination_tag_with_trailing_whitespace_matches_expected_tag() {
     let mut intent = demo_scenarios()[6].intent.clone();
     intent.entered_destination_tag_or_memo = Some("482901 ".to_string());
@@ -561,6 +588,62 @@ fn stop_precedence_beats_review() {
 }
 
 #[test]
+fn missing_approval_scope_is_stopped() {
+    let intent = Intent {
+        action_type: ActionType::Approve,
+        approval_amount_or_scope: None,
+        ..basic(ActionType::Approve)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_MISSING_SCOPE");
+}
+
+#[test]
+fn null_approval_scope_is_stopped() {
+    let mut intent = demo_scenarios()[4].intent.clone();
+    intent.approval_amount_or_scope = None;
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_MISSING_SCOPE");
+}
+
+#[test]
+fn blank_approval_scope_is_stopped() {
+    let intent = Intent {
+        action_type: ActionType::Approve,
+        approval_amount_or_scope: Some("".to_string()),
+        ..basic(ActionType::Approve)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_MISSING_SCOPE");
+}
+
+#[test]
+fn whitespace_only_approval_scope_is_stopped() {
+    let intent = Intent {
+        action_type: ActionType::Approve,
+        approval_amount_or_scope: Some("   ".to_string()),
+        ..basic(ActionType::Approve)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(result.triggered_rule_id, "APPROVAL_MISSING_SCOPE");
+}
+
+#[test]
+fn limited_approval_scope_is_ready() {
+    let intent = Intent {
+        action_type: ActionType::Approve,
+        approval_amount_or_scope: Some("1000".to_string()),
+        ..basic(ActionType::Approve)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
 fn review_precedence_beats_ready() {
     let mut intent = demo_scenarios()[5].intent.clone();
     intent.swap_slippage_percent = Some(7.0);
@@ -885,6 +968,42 @@ fn known_usdc_identifier_with_eth_symbol_stops() {
     let result = evaluate(&intent, &registry());
     assert_eq!(result.decision, Decision::Stop);
     assert_eq!(result.triggered_rule_id, "TOKEN_ASSET_SYMBOL_MISMATCH");
+}
+
+#[test]
+fn evm_destination_addresses_match_case_insensitively_with_whitespace() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("Ethereum".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some(" 0xabcdef00000000000000000000000000000012 ".to_string()),
+        expected_destination_address: Some("0xAbCdEf00000000000000000000000000000012".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Ready);
+}
+
+#[test]
+fn different_evm_destination_addresses_do_not_match() {
+    let intent = Intent {
+        action_type: ActionType::Send,
+        source_network: Some("ethereum".to_string()),
+        destination_network: Some("Base".to_string()),
+        asset_symbol: Some("USDC".to_string()),
+        asset_identifier: Some("eth:usdc".to_string()),
+        destination_address: Some("0xabcdef00000000000000000000000000000012".to_string()),
+        expected_destination_address: Some("0xabcdef00000000000000000000000000000034".to_string()),
+        ..basic(ActionType::Send)
+    };
+    let result = evaluate(&intent, &registry());
+    assert_eq!(result.decision, Decision::Stop);
+    assert_eq!(
+        result.triggered_rule_id,
+        "TRANSFER_DESTINATION_ADDRESS_MISMATCH"
+    );
 }
 
 #[test]
