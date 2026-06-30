@@ -102,8 +102,7 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         ("200 OK", "application/javascript", APP_JS.to_string(), "")
     } else if first.starts_with("GET /styles.css ") {
         ("200 OK", "text/css", STYLES_CSS.to_string(), "")
-    } else if first.starts_with("GET /favicon.ico ")
-        || first.starts_with("GET /favicon.svg ")
+    } else if first.starts_with("GET /favicon.svg ")
         || first.starts_with("GET /assets/sendsure-mark.svg ")
     {
         (
@@ -142,7 +141,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" href="/assets/sendsure-mark.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/assets/sendsure-mark.svg">
   <title>SendSure</title>
@@ -816,7 +814,7 @@ mod tests {
 
     #[test]
     fn favicon_routes_serve_shield_mark_svg() {
-        for path in ["/favicon.ico", "/favicon.svg", "/assets/sendsure-mark.svg"] {
+        for path in ["/favicon.svg", "/assets/sendsure-mark.svg"] {
             let request = format!("GET {path} HTTP/1.1\r\nHost: example\r\n\r\n");
             let response = round_trip(&request);
             assert!(
@@ -837,8 +835,8 @@ mod tests {
     #[test]
     fn frontend_declares_favicon_links_for_browser_tab() {
         assert!(
-            INDEX_HTML.contains("<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\">"),
-            "browser tab should load favicon from /favicon.ico"
+            !INDEX_HTML.contains("href=\"/favicon.ico\""),
+            "do not advertise /favicon.ico without a real ICO/PNG asset"
         );
         assert!(
             INDEX_HTML.contains(
