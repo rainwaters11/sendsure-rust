@@ -102,6 +102,23 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         ("200 OK", "application/javascript", APP_JS.to_string(), "")
     } else if first.starts_with("GET /styles.css ") {
         ("200 OK", "text/css", STYLES_CSS.to_string(), "")
+    } else if first.starts_with("GET /favicon.ico ")
+        || first.starts_with("GET /favicon.svg ")
+        || first.starts_with("GET /assets/sendsure-mark.svg ")
+    {
+        (
+            "200 OK",
+            "image/svg+xml",
+            MARK_SVG.to_string(),
+            "Cache-Control: public, max-age=86400\r\n",
+        )
+    } else if first.starts_with("GET /assets/sendsure-logo-horizontal.svg ") {
+        (
+            "200 OK",
+            "image/svg+xml",
+            LOGO_HORIZONTAL_SVG.to_string(),
+            "",
+        )
     } else {
         (
             "404 Not Found",
@@ -117,18 +134,28 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
     )
 }
 
+const LOGO_HORIZONTAL_SVG: &str = include_str!("../assets/sendsure-logo-horizontal.svg");
+const MARK_SVG: &str = include_str!("../assets/sendsure-mark.svg");
+
 const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/assets/sendsure-mark.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/sendsure-mark.svg">
   <title>SendSure</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
-    <h1>SendSure</h1>
-    <p>Wallet-agnostic deterministic transaction preflight safety.</p>
+    <header class="site-header">
+      <div class="brand-banner">
+        <img src="/assets/sendsure-logo-horizontal.svg" alt="SendSure — Preflight safety before crypto actions become permanent." class="brand-logo" width="760" height="180" decoding="async">
+      </div>
+      <p class="tagline">Wallet-agnostic deterministic transaction preflight safety.</p>
+    </header>
 
     <div class="actions" role="tablist" aria-label="Intent action type">
       <button type="button" data-action="SEND" class="active">SEND</button>
@@ -179,7 +206,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 </body>
 </html>"#;
 
-const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
+const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.site-header{margin-bottom:24px}.brand-banner{padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#101927 0%,#161b22 52%,#12283a 100%);border:1px solid #30363d;overflow:hidden;text-align:center}.brand-logo{display:block;width:min(100%,680px);max-width:100%;height:auto;margin:0 auto}.tagline{margin:14px 0 0;color:#c9d1d9;max-width:70ch;line-height:1.5}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
 
 const APP_JS: &str = r##"
 const result = document.getElementById('result');
@@ -785,6 +812,38 @@ mod tests {
         assert!(response.contains("Access-Control-Allow-Methods: POST, OPTIONS\r\n"));
         assert!(response.contains("Access-Control-Allow-Headers: Content-Type\r\n"));
         assert!(response.contains("Content-Length: 0\r\n"));
+    }
+
+    #[test]
+    fn favicon_routes_serve_shield_mark_svg() {
+        for path in ["/favicon.ico", "/favicon.svg", "/assets/sendsure-mark.svg"] {
+            let request = format!("GET {path} HTTP/1.1\r\nHost: example\r\n\r\n");
+            let response = round_trip(&request);
+            assert!(
+                response.starts_with("HTTP/1.1 200 OK\r\n"),
+                "expected 200 for {path}"
+            );
+            assert!(
+                response.contains("Content-Type: image/svg+xml\r\n"),
+                "expected svg content type for {path}"
+            );
+            assert!(
+                response.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""),
+                "expected svg body for {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn frontend_declares_favicon_links_for_browser_tab() {
+        assert!(
+            INDEX_HTML.contains("<link rel=\"icon\" href=\"/favicon.ico\" sizes=\"any\">"),
+            "browser tab should load favicon from /favicon.ico"
+        );
+        assert!(
+            INDEX_HTML.contains("<link rel=\"icon\" href=\"/assets/sendsure-mark.svg\" type=\"image/svg+xml\">"),
+            "svg favicon should reference the approved shield mark"
+        );
     }
 
     #[test]
