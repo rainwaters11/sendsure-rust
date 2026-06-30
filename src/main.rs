@@ -170,7 +170,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       </div>
     </form>
 
-    <section id="result" class="card">Choose a demo scenario or enter transaction details to begin.</section>
+    <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
     <button type="button" id="continue" disabled>Continue</button>
 
     <p class="note">Deterministic Rust rules-not an LLM-make the decision. SendSure does not request seed phrases or private keys and cannot block actions performed outside this application.</p>
@@ -179,7 +179,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 </body>
 </html>"#;
 
-const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
+const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
 
 const APP_JS: &str = r##"
 const result = document.getElementById('result');
@@ -444,6 +444,7 @@ function invalidateActionEvaluationState() {
     result.textContent = actionChangedText;
     applyContinueState();
     evaluateButton.disabled = false;
+    checkButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
 }
 
@@ -553,6 +554,28 @@ function applyContinueState(decision) {
     cont.textContent = 'Continue';
 }
 
+function escapeHtml(value) {
+    return blank(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function decisionSummary(decision) {
+    if (decision === 'READY') {
+        return 'Details match the stated intent. Review your wallet before continuing.';
+    }
+    if (decision === 'REVIEW') {
+        return 'A risk needs your attention before you continue.';
+    }
+    if (decision === 'STOP') {
+        return 'Do not continue until this issue is corrected.';
+    }
+    return '';
+}
+
 function clearAllIntentFieldValues() {
     allIntentFields.forEach((name) => {
         if (name === 'action_type') {
@@ -567,21 +590,29 @@ function setResultIdle() {
     result.className = 'card';
     result.textContent = resultDefault;
     applyContinueState();
+    checkButton.disabled = false;
 }
 
 function setResultLoading() {
     result.className = 'card';
     result.textContent = evaluatingText;
     evaluateButton.disabled = true;
+    checkButton.disabled = true;
     evaluateButton.textContent = 'Evaluating...';
     applyContinueState();
 }
 
 function renderResult(payload) {
     result.className = 'card ' + payload.decision;
-    result.innerHTML = `<h2>${payload.decision}</h2><p><b>Rule:</b> ${payload.triggered_rule_id}</p><p>${payload.explanation}</p><p><b>Recommended next step:</b> ${payload.recommended_next_step}</p>`;
+    const decision = escapeHtml(payload.decision);
+    const summary = escapeHtml(decisionSummary(payload.decision));
+    const ruleId = escapeHtml(payload.triggered_rule_id);
+    const explanation = escapeHtml(payload.explanation);
+    const nextStep = escapeHtml(payload.recommended_next_step);
+    result.innerHTML = `<div class="decision-banner"><div class="decision-header"><h2 class="decision-title">${decision}</h2><span class="decision-badge ${decision}">${decision}</span></div><p class="decision-summary">${summary}</p><p class="rule-line"><strong>Rule:</strong> <span class="rule-pill">${ruleId}</span></p><div class="decision-body"><p>${explanation}</p><p><b>Recommended next step:</b> ${nextStep}</p></div><div class="trust-row" aria-label="Trust indicators"><span class="trust-chip">Deterministic Rust rules</span><span class="trust-chip">No custody</span><span class="trust-chip">No transaction sent</span></div></div>`;
     applyContinueState(payload.decision);
     evaluateButton.disabled = false;
+    checkButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
     result.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -591,6 +622,7 @@ function renderError(message) {
     result.innerHTML = `<h2>Error</h2><p>${message}</p>`;
     applyContinueState();
     evaluateButton.disabled = false;
+    checkButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
     result.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -652,6 +684,7 @@ function resetExperience() {
     closeOpenModals();
     setResultIdle();
     evaluateButton.disabled = false;
+    checkButton.disabled = false;
     evaluateButton.textContent = evaluateDefaultLabel;
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     focusFirstVisibleField('SEND');
@@ -670,7 +703,10 @@ formFields.action_type.addEventListener('change', () => {
 form.addEventListener('input', handleManualFieldInput);
 form.addEventListener('change', handleManualFieldChange);
 
-checkButton.addEventListener('click', () => form.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+checkButton.addEventListener('click', async () => {
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    await evaluateFromForm();
+});
 resetButton.addEventListener('click', resetExperience);
 
 form.addEventListener('submit', async (event) => {
@@ -763,6 +799,11 @@ mod tests {
             "check button should not submit the form"
         );
         assert!(
+            APP_JS.contains("checkButton.addEventListener('click', async () => {")
+                && APP_JS.contains("await evaluateFromForm();"),
+            "top check button should trigger the same preflight evaluation flow"
+        );
+        assert!(
             INDEX_HTML
                 .contains("<button type=\"button\" id=\"continue\" disabled>Continue</button>"),
             "continue should be non-submit and disabled initially"
@@ -840,12 +881,30 @@ mod tests {
         assert!(
             APP_JS.contains("new AbortController()")
                 && APP_JS.contains("signal: controller.signal")
-                && APP_JS.contains("if (error && error.name === 'AbortError')"),
+                && APP_JS.contains("if (error && error.name === 'AbortError')")
+                && APP_JS.contains("checkButton.disabled = true;")
+                && APP_JS.contains("checkButton.disabled = false;"),
             "evaluation requests should support abort and suppress abort errors"
         );
         assert!(
             INDEX_HTML.contains("Choose a demo scenario or enter transaction details to begin."),
             "default result guidance should match reset state copy"
+        );
+        assert!(
+            INDEX_HTML.contains("<section id=\"result\" class=\"card\" aria-live=\"polite\">"),
+            "result region should announce decision changes for assistive technologies"
+        );
+        assert!(
+            APP_JS.contains("function decisionSummary(decision)")
+                && APP_JS.contains("Do not continue until this issue is corrected.")
+                && APP_JS.contains("A risk needs your attention before you continue.")
+                && APP_JS.contains(
+                    "Details match the stated intent. Review your wallet before continuing."
+                )
+                && APP_JS.contains("Deterministic Rust rules")
+                && APP_JS.contains("No custody")
+                && APP_JS.contains("No transaction sent"),
+            "decision card should include summary text and trust indicators"
         );
         assert!(
             APP_JS
