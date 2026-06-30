@@ -181,7 +181,521 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
 const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
 
-const APP_JS: &str = r#"const result=document.getElementById('result');const cont=document.getElementById('continue');const form=document.getElementById('intent-form');const evaluateButton=document.getElementById('evaluate');const resetButton=document.getElementById('reset');const scenarioBox=document.getElementById('scenarios');const checkButton=document.getElementById('check');const actionButtons=[...document.querySelectorAll('.actions button')];const evaluateDefaultLabel=(evaluateButton.textContent||'Evaluate intent').trim();const resultDefault='Choose a demo scenario or enter transaction details to begin.';const evaluatingText='Evaluating with deterministic Rust rules...';const fieldNames=['action_type','source_network','destination_network','asset_symbol','asset_identifier','destination_address','expected_destination_address','entered_destination_tag_or_memo','expected_destination_tag_or_memo','contract_address','approval_amount_or_scope','swap_slippage_percent','transaction_origin'];const allIntentFields=[...fieldNames,'asset_was_unsolicited'];const fieldVisibility={SEND:['source_network','destination_network','asset_symbol','asset_identifier','destination_address','expected_destination_address','entered_destination_tag_or_memo','expected_destination_tag_or_memo','transaction_origin','asset_was_unsolicited'],SWAP:['source_network','destination_network','asset_symbol','asset_identifier','destination_address','expected_destination_address','swap_slippage_percent','transaction_origin'],APPROVE:['source_network','asset_symbol','asset_identifier','contract_address','approval_amount_or_scope','transaction_origin'],SIGN:['source_network','contract_address','transaction_origin','asset_was_unsolicited']};const formFields=Object.fromEntries([...form.elements].filter(el=>el.name).map(el=>[el.name,el]));let selectedScenarioIndex=null;let scenarioButtons=[];let selectedAction='SEND';let activeRequestController=null;let requestGeneration=0;function blank(v){return v==null?'':String(v)}function normalizeAction(action){const next=blank(action).toUpperCase();return fieldVisibility[next]?next:'SEND'}function nullableText(value){if(value==null)return null;const trimmed=String(value).trim();return trimmed===''?null:trimmed}function nullableNumber(value){const text=nullableText(value);if(text==null)return null;const parsed=Number(text);return Number.isFinite(parsed)?parsed:null}function fieldContainer(field){if(!field)return null;return field.type==='checkbox'&&field.parentElement?field.parentElement:field}function clearFieldValue(name){const field=formFields[name];if(!field)return;if(field.type==='checkbox'){field.checked=false;return}if(name!=='action_type'){field.value=''}}function setFieldVisibility(name,visible){const field=formFields[name];if(!field)return;const container=fieldContainer(field);if(container){container.hidden=!visible;container.classList.toggle('is-hidden',!visible)}}function isFieldVisible(action,name){return (fieldVisibility[action]||fieldVisibility.SEND).includes(name)}function focusFirstVisibleField(action){const order=(fieldVisibility[action]||fieldVisibility.SEND).slice();const firstName=order.find(name=>{if(name==='action_type')return false;const field=formFields[name];if(!field)return false;const container=fieldContainer(field);return !(container&&container.hidden)});const firstField=firstName?formFields[firstName]:formFields.source_network;if(firstField&&typeof firstField.focus==='function'){firstField.focus()}}function updateFieldVisibility(action){allIntentFields.forEach(name=>{if(name==='action_type')return;setFieldVisibility(name,isFieldVisible(action,name))})}function clearIrrelevantFieldValues(action){allIntentFields.forEach(name=>{if(name==='action_type')return;if(!isFieldVisible(action,name)){clearFieldValue(name)}})}function setActionState(action,{clearIrrelevant=false,focus=false}={}){selectedAction=normalizeAction(action);if(clearIrrelevant){clearIrrelevantFieldValues(selectedAction)}actionButtons.forEach(button=>{button.classList.toggle('active',button.dataset.action===selectedAction)});formFields.action_type.value=selectedAction;updateFieldVisibility(selectedAction);if(focus){focusFirstVisibleField(selectedAction)}}function updateScenarioHighlight(){scenarioButtons.forEach((button,index)=>{button.classList.toggle('scenario-selected',index===selectedScenarioIndex)})}function clearUiMessages(){document.querySelectorAll('[data-validation-message],.validation-message,.api-error,.error-message').forEach(el=>{el.textContent='';el.classList.remove('show');el.hidden=true});document.querySelectorAll('[data-risk-ack],[data-wallet-handoff],[data-completion-message],#risk-acknowledgment,#wallet-handoff,#completion-message').forEach(el=>{if('checked'in el){el.checked=false}el.textContent='';el.classList.remove('show');el.hidden=true})}function closeOpenModals(){document.querySelectorAll('dialog[open]').forEach(dialog=>{if(typeof dialog.close==='function'){dialog.close()}else{dialog.removeAttribute('open')}});document.querySelectorAll('.modal.open,.panel.open,[data-open="true"]').forEach(el=>{el.classList.remove('open');el.setAttribute('data-open','false');el.hidden=true})}function clearPendingEvaluation(){requestGeneration+=1;if(activeRequestController){activeRequestController.abort();activeRequestController=null}}function populateScenario(intent){fieldNames.forEach(name=>{const field=formFields[name];if(!field)return;field.value=blank(intent?.[name])});formFields.asset_was_unsolicited.checked=Boolean(intent?.asset_was_unsolicited)}function valueForField(name){if(!isFieldVisible(selectedAction,name)){return null}if(name==='swap_slippage_percent'){return nullableNumber(formFields.swap_slippage_percent.value)}return nullableText(formFields[name].value)}function buildIntentFromForm(){return{action_type:selectedAction,source_network:valueForField('source_network'),destination_network:valueForField('destination_network'),asset_symbol:valueForField('asset_symbol'),asset_identifier:valueForField('asset_identifier'),destination_address:valueForField('destination_address'),expected_destination_address:valueForField('expected_destination_address'),entered_destination_tag_or_memo:valueForField('entered_destination_tag_or_memo'),expected_destination_tag_or_memo:valueForField('expected_destination_tag_or_memo'),contract_address:valueForField('contract_address'),approval_amount_or_scope:valueForField('approval_amount_or_scope'),swap_slippage_percent:valueForField('swap_slippage_percent'),transaction_origin:valueForField('transaction_origin'),asset_was_unsolicited:isFieldVisible(selectedAction,'asset_was_unsolicited')?Boolean(formFields.asset_was_unsolicited.checked):false}}function setResultIdle(){result.className='card';result.textContent=resultDefault;cont.disabled=true;cont.textContent='Continue'}function setResultLoading(){result.className='card';result.textContent=evaluatingText;evaluateButton.disabled=true;evaluateButton.textContent='Evaluating...';cont.disabled=true;cont.textContent='Continue'}function continueLabel(decision){if(decision==='READY')return 'Continue';if(decision==='REVIEW')return 'Continue with review';return 'Continue'}function renderResult(payload){result.className='card '+payload.decision;result.innerHTML=`<h2>${payload.decision}</h2><p><b>Rule:</b> ${payload.triggered_rule_id}</p><p>${payload.explanation}</p><p><b>Recommended next step:</b> ${payload.recommended_next_step}</p>`;cont.disabled=payload.decision==='STOP';cont.textContent=continueLabel(payload.decision);evaluateButton.disabled=false;evaluateButton.textContent=evaluateDefaultLabel;result.scrollIntoView({behavior:'smooth',block:'start'})}function renderError(message){result.className='card';result.innerHTML=`<h2>Error</h2><p>${message}</p>`;cont.disabled=true;cont.textContent='Continue';evaluateButton.disabled=false;evaluateButton.textContent=evaluateDefaultLabel;result.scrollIntoView({behavior:'smooth',block:'start'})}async function evaluateIntent(intent){clearPendingEvaluation();const myGeneration=requestGeneration;const controller=new AbortController();activeRequestController=controller;setResultLoading();try{const response=await fetch('/api/evaluate',{method:'POST',cache:'no-store',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify(intent)});if(myGeneration!==requestGeneration){return}if(!response.ok){throw new Error(`Request failed with status ${response.status}`)}const payload=await response.json();if(myGeneration!==requestGeneration){return}renderResult(payload)}catch(error){if(error&&error.name==='AbortError'){return}if(myGeneration!==requestGeneration){return}renderError(`Unable to evaluate intent right now. Please try again in a moment. (${error.message})`)}finally{if(activeRequestController===controller){activeRequestController=null}}}async function evaluateFromForm(){await evaluateIntent(buildIntentFromForm())}function resetExperience(){clearPendingEvaluation();form.reset();setActionState('SEND',{clearIrrelevant:true,focus:false});selectedScenarioIndex=null;updateScenarioHighlight();clearUiMessages();closeOpenModals();setResultIdle();evaluateButton.disabled=false;evaluateButton.textContent=evaluateDefaultLabel;form.scrollIntoView({behavior:'smooth',block:'start'});focusFirstVisibleField('SEND')}actionButtons.forEach(button=>{button.addEventListener('click',()=>{setActionState(button.dataset.action||'SEND',{clearIrrelevant:true,focus:true})})});formFields.action_type.addEventListener('change',()=>{setActionState(formFields.action_type.value,{clearIrrelevant:true,focus:true})});checkButton.addEventListener('click',()=>form.scrollIntoView({behavior:'smooth',block:'start'}));resetButton.addEventListener('click',resetExperience);form.addEventListener('submit',async event=>{event.preventDefault();await evaluateFromForm()});setActionState('SEND');setResultIdle();fetch('/api/scenarios',{cache:'no-store'}).then(response=>response.json()).then(scenarios=>{scenarioBox.innerHTML='';scenarioButtons=[];scenarios.forEach((scenario,index)=>{const button=document.createElement('button');button.type='button';button.textContent=`${index+1}. ${scenario.name}`;button.addEventListener('click',async()=>{selectedScenarioIndex=index;updateScenarioHighlight();setActionState(blank(scenario.intent?.action_type)||'SEND',{clearIrrelevant:false,focus:false});populateScenario(scenario.intent);await evaluateFromForm()});scenarioBox.appendChild(button);scenarioButtons.push(button)})}).catch(()=>{renderError('Unable to load demo scenarios. Refresh and try again.')});"#;
+const APP_JS: &str = r##"
+const result = document.getElementById('result');
+const cont = document.getElementById('continue');
+const form = document.getElementById('intent-form');
+const evaluateButton = document.getElementById('evaluate');
+const resetButton = document.getElementById('reset');
+const scenarioBox = document.getElementById('scenarios');
+const checkButton = document.getElementById('check');
+const actionButtons = [...document.querySelectorAll('.actions button')];
+
+const evaluateDefaultLabel = (evaluateButton.textContent || 'Evaluate intent').trim();
+const resultDefault = 'Choose a demo scenario or enter transaction details to begin.';
+const actionChangedText = 'Transaction details changed. Run the preflight check again.';
+const evaluatingText = 'Evaluating with deterministic Rust rules...';
+
+const fieldNames = [
+    'action_type',
+    'source_network',
+    'destination_network',
+    'asset_symbol',
+    'asset_identifier',
+    'destination_address',
+    'expected_destination_address',
+    'entered_destination_tag_or_memo',
+    'expected_destination_tag_or_memo',
+    'contract_address',
+    'approval_amount_or_scope',
+    'swap_slippage_percent',
+    'transaction_origin',
+];
+
+const allIntentFields = [...fieldNames, 'asset_was_unsolicited'];
+const fieldVisibility = {
+    SEND: [
+        'source_network',
+        'destination_network',
+        'asset_symbol',
+        'asset_identifier',
+        'destination_address',
+        'expected_destination_address',
+        'entered_destination_tag_or_memo',
+        'expected_destination_tag_or_memo',
+        'transaction_origin',
+        'asset_was_unsolicited',
+    ],
+    SWAP: [
+        'source_network',
+        'destination_network',
+        'asset_symbol',
+        'asset_identifier',
+        'destination_address',
+        'expected_destination_address',
+        'swap_slippage_percent',
+        'transaction_origin',
+    ],
+    APPROVE: [
+        'source_network',
+        'asset_symbol',
+        'asset_identifier',
+        'contract_address',
+        'approval_amount_or_scope',
+        'transaction_origin',
+    ],
+    SIGN: ['source_network', 'contract_address', 'transaction_origin', 'asset_was_unsolicited'],
+};
+
+const formFields = Object.fromEntries([...form.elements].filter((el) => el.name).map((el) => [el.name, el]));
+
+let selectedScenarioIndex = null;
+let scenarioButtons = [];
+let selectedAction = 'SEND';
+let activeRequestController = null;
+let requestGeneration = 0;
+let isProgrammaticUpdate = false;
+
+function blank(value) {
+    return value == null ? '' : String(value);
+}
+
+function normalizeAction(action) {
+    const next = blank(action).toUpperCase();
+    return fieldVisibility[next] ? next : 'SEND';
+}
+
+function nullableText(value) {
+    if (value == null) {
+        return null;
+    }
+    const trimmed = String(value).trim();
+    return trimmed === '' ? null : trimmed;
+}
+
+function nullableNumber(value) {
+    const text = nullableText(value);
+    if (text == null) {
+        return null;
+    }
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function withProgrammaticUpdate(fn) {
+    const previous = isProgrammaticUpdate;
+    isProgrammaticUpdate = true;
+    try {
+        return fn();
+    } finally {
+        isProgrammaticUpdate = previous;
+    }
+}
+
+function fieldContainer(field) {
+    if (!field) {
+        return null;
+    }
+    return field.type === 'checkbox' && field.parentElement ? field.parentElement : field;
+}
+
+function clearFieldValue(name) {
+    const field = formFields[name];
+    if (!field) {
+        return;
+    }
+    if (field.type === 'checkbox') {
+        field.checked = false;
+        return;
+    }
+    if (name !== 'action_type') {
+        field.value = '';
+    }
+}
+
+function setFieldVisibility(name, visible) {
+    const field = formFields[name];
+    if (!field) {
+        return;
+    }
+    const container = fieldContainer(field);
+    if (container) {
+        container.hidden = !visible;
+        container.classList.toggle('is-hidden', !visible);
+    }
+}
+
+function isFieldVisible(action, name) {
+    return (fieldVisibility[action] || fieldVisibility.SEND).includes(name);
+}
+
+function focusFirstVisibleField(action) {
+    const order = (fieldVisibility[action] || fieldVisibility.SEND).slice();
+    const firstName = order.find((name) => {
+        if (name === 'action_type') {
+            return false;
+        }
+        const field = formFields[name];
+        if (!field) {
+            return false;
+        }
+        const container = fieldContainer(field);
+        return !(container && container.hidden);
+    });
+    const firstField = firstName ? formFields[firstName] : formFields.source_network;
+    if (firstField && typeof firstField.focus === 'function') {
+        firstField.focus();
+    }
+}
+
+function updateFieldVisibility(action) {
+    allIntentFields.forEach((name) => {
+        if (name === 'action_type') {
+            return;
+        }
+        setFieldVisibility(name, isFieldVisible(action, name));
+    });
+}
+
+function clearIrrelevantFieldValues(action) {
+    allIntentFields.forEach((name) => {
+        if (name === 'action_type') {
+            return;
+        }
+        if (!isFieldVisible(action, name)) {
+            clearFieldValue(name);
+        }
+    });
+}
+
+function setActionState(action, { clearIrrelevant = false, focus = false } = {}) {
+    selectedAction = normalizeAction(action);
+    if (clearIrrelevant) {
+        clearIrrelevantFieldValues(selectedAction);
+    }
+    actionButtons.forEach((button) => {
+        button.classList.toggle('active', button.dataset.action === selectedAction);
+    });
+    formFields.action_type.value = selectedAction;
+    updateFieldVisibility(selectedAction);
+    if (focus) {
+        focusFirstVisibleField(selectedAction);
+    }
+}
+
+function updateScenarioHighlight() {
+    scenarioButtons.forEach((button, index) => {
+        button.classList.toggle('scenario-selected', index === selectedScenarioIndex);
+    });
+}
+
+function clearUiMessages() {
+    document
+        .querySelectorAll('[data-validation-message],.validation-message,.api-error,.error-message')
+        .forEach((el) => {
+            el.textContent = '';
+            el.classList.remove('show');
+            el.hidden = true;
+        });
+    document
+        .querySelectorAll(
+            '[data-risk-ack],[data-wallet-handoff],[data-completion-message],#risk-acknowledgment,#wallet-handoff,#completion-message'
+        )
+        .forEach((el) => {
+            if ('checked' in el) {
+                el.checked = false;
+            }
+            el.textContent = '';
+            el.classList.remove('show');
+            el.hidden = true;
+        });
+}
+
+function closeOpenModals() {
+    document.querySelectorAll('dialog[open]').forEach((dialog) => {
+        if (typeof dialog.close === 'function') {
+            dialog.close();
+        } else {
+            dialog.removeAttribute('open');
+        }
+    });
+    document.querySelectorAll('.modal.open,.panel.open,[data-open="true"]').forEach((el) => {
+        el.classList.remove('open');
+        el.setAttribute('data-open', 'false');
+        el.hidden = true;
+    });
+}
+
+function clearPendingEvaluation() {
+    requestGeneration += 1;
+    if (activeRequestController) {
+        activeRequestController.abort();
+        activeRequestController = null;
+    }
+}
+
+function invalidateActionEvaluationState() {
+    clearPendingEvaluation();
+    selectedScenarioIndex = null;
+    updateScenarioHighlight();
+    clearUiMessages();
+    closeOpenModals();
+    result.className = 'card';
+    result.textContent = actionChangedText;
+    cont.disabled = true;
+    cont.textContent = 'Continue';
+    evaluateButton.disabled = false;
+    evaluateButton.textContent = evaluateDefaultLabel;
+}
+
+function applyManualActionChange(action) {
+    withProgrammaticUpdate(() => {
+        setActionState(action, { clearIrrelevant: true, focus: true });
+    });
+    invalidateActionEvaluationState();
+}
+
+function shouldInvalidateForManualEdit(target) {
+    if (isProgrammaticUpdate || !target || !target.name) {
+        return false;
+    }
+    if (target.name === 'action_type') {
+        return false;
+    }
+    return true;
+}
+
+function handleManualFieldInput(event) {
+    const target = event.target;
+    if (!shouldInvalidateForManualEdit(target)) {
+        return;
+    }
+    const type = (target.type || '').toLowerCase();
+    if (type === 'checkbox') {
+        return;
+    }
+    invalidateActionEvaluationState();
+}
+
+function handleManualFieldChange(event) {
+    const target = event.target;
+    if (!shouldInvalidateForManualEdit(target)) {
+        return;
+    }
+    const tag = (target.tagName || '').toUpperCase();
+    const type = (target.type || '').toLowerCase();
+    const isCheckbox = tag === 'INPUT' && type === 'checkbox';
+    const isSelect = tag === 'SELECT';
+    if (!isCheckbox && !isSelect) {
+        return;
+    }
+    invalidateActionEvaluationState();
+}
+
+function populateScenario(intent) {
+    fieldNames.forEach((name) => {
+        const field = formFields[name];
+        if (!field) {
+            return;
+        }
+        field.value = blank(intent?.[name]);
+    });
+    formFields.asset_was_unsolicited.checked = Boolean(intent?.asset_was_unsolicited);
+}
+
+function valueForField(name) {
+    if (!isFieldVisible(selectedAction, name)) {
+        return null;
+    }
+    if (name === 'swap_slippage_percent') {
+        return nullableNumber(formFields.swap_slippage_percent.value);
+    }
+    return nullableText(formFields[name].value);
+}
+
+function buildIntentFromForm() {
+    return {
+        action_type: selectedAction,
+        source_network: valueForField('source_network'),
+        destination_network: valueForField('destination_network'),
+        asset_symbol: valueForField('asset_symbol'),
+        asset_identifier: valueForField('asset_identifier'),
+        destination_address: valueForField('destination_address'),
+        expected_destination_address: valueForField('expected_destination_address'),
+        entered_destination_tag_or_memo: valueForField('entered_destination_tag_or_memo'),
+        expected_destination_tag_or_memo: valueForField('expected_destination_tag_or_memo'),
+        contract_address: valueForField('contract_address'),
+        approval_amount_or_scope: valueForField('approval_amount_or_scope'),
+        swap_slippage_percent: valueForField('swap_slippage_percent'),
+        transaction_origin: valueForField('transaction_origin'),
+        asset_was_unsolicited: isFieldVisible(selectedAction, 'asset_was_unsolicited')
+            ? Boolean(formFields.asset_was_unsolicited.checked)
+            : false,
+    };
+}
+
+function setResultIdle() {
+    result.className = 'card';
+    result.textContent = resultDefault;
+    cont.disabled = true;
+    cont.textContent = 'Continue';
+}
+
+function setResultLoading() {
+    result.className = 'card';
+    result.textContent = evaluatingText;
+    evaluateButton.disabled = true;
+    evaluateButton.textContent = 'Evaluating...';
+    cont.disabled = true;
+    cont.textContent = 'Continue';
+}
+
+function continueLabel(decision) {
+    if (decision === 'READY') {
+        return 'Continue';
+    }
+    if (decision === 'REVIEW') {
+        return 'Continue with review';
+    }
+    return 'Continue';
+}
+
+function renderResult(payload) {
+    result.className = 'card ' + payload.decision;
+    result.innerHTML = `<h2>${payload.decision}</h2><p><b>Rule:</b> ${payload.triggered_rule_id}</p><p>${payload.explanation}</p><p><b>Recommended next step:</b> ${payload.recommended_next_step}</p>`;
+    cont.disabled = payload.decision === 'STOP';
+    cont.textContent = continueLabel(payload.decision);
+    evaluateButton.disabled = false;
+    evaluateButton.textContent = evaluateDefaultLabel;
+    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderError(message) {
+    result.className = 'card';
+    result.innerHTML = `<h2>Error</h2><p>${message}</p>`;
+    cont.disabled = true;
+    cont.textContent = 'Continue';
+    evaluateButton.disabled = false;
+    evaluateButton.textContent = evaluateDefaultLabel;
+    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function evaluateIntent(intent) {
+    clearPendingEvaluation();
+    const myGeneration = requestGeneration;
+    const controller = new AbortController();
+    activeRequestController = controller;
+    setResultLoading();
+    try {
+        const response = await fetch('/api/evaluate', {
+            method: 'POST',
+            cache: 'no-store',
+            signal: controller.signal,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(intent),
+        });
+        if (myGeneration !== requestGeneration) {
+            return;
+        }
+        if (!response.ok) {
+            throw new Error(`Request failed with status ${response.status}`);
+        }
+        const payload = await response.json();
+        if (myGeneration !== requestGeneration) {
+            return;
+        }
+        renderResult(payload);
+    } catch (error) {
+        if (error && error.name === 'AbortError') {
+            return;
+        }
+        if (myGeneration !== requestGeneration) {
+            return;
+        }
+        renderError(`Unable to evaluate intent right now. Please try again in a moment. (${error.message})`);
+    } finally {
+        if (activeRequestController === controller) {
+            activeRequestController = null;
+        }
+    }
+}
+
+async function evaluateFromForm() {
+    await evaluateIntent(buildIntentFromForm());
+}
+
+function resetExperience() {
+    clearPendingEvaluation();
+    withProgrammaticUpdate(() => {
+        form.reset();
+        setActionState('SEND', { clearIrrelevant: true, focus: false });
+    });
+    selectedScenarioIndex = null;
+    updateScenarioHighlight();
+    clearUiMessages();
+    closeOpenModals();
+    setResultIdle();
+    evaluateButton.disabled = false;
+    evaluateButton.textContent = evaluateDefaultLabel;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusFirstVisibleField('SEND');
+}
+
+actionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        applyManualActionChange(button.dataset.action || 'SEND');
+    });
+});
+
+formFields.action_type.addEventListener('change', () => {
+    applyManualActionChange(formFields.action_type.value);
+});
+
+form.addEventListener('input', handleManualFieldInput);
+form.addEventListener('change', handleManualFieldChange);
+
+checkButton.addEventListener('click', () => form.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+resetButton.addEventListener('click', resetExperience);
+
+form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    await evaluateFromForm();
+});
+
+withProgrammaticUpdate(() => {
+    setActionState('SEND');
+});
+setResultIdle();
+
+fetch('/api/scenarios', { cache: 'no-store' })
+    .then((response) => response.json())
+    .then((scenarios) => {
+        scenarioBox.innerHTML = '';
+        scenarioButtons = [];
+        scenarios.forEach((scenario, index) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = `${index + 1}. ${scenario.name}`;
+            button.addEventListener('click', async () => {
+                selectedScenarioIndex = index;
+                updateScenarioHighlight();
+                withProgrammaticUpdate(() => {
+                    setActionState(blank(scenario.intent?.action_type) || 'SEND', {
+                        clearIrrelevant: false,
+                        focus: false,
+                    });
+                    populateScenario(scenario.intent);
+                });
+                await evaluateFromForm();
+            });
+            scenarioBox.appendChild(button);
+            scenarioButtons.push(button);
+        });
+    })
+    .catch(() => {
+        renderError('Unable to load demo scenarios. Refresh and try again.');
+    });
+"##;
 #[cfg(test)]
 mod tests {
     use super::handle_client;
@@ -258,15 +772,17 @@ mod tests {
             "submit path must evaluate a fresh serialized intent"
         );
         assert!(
-            APP_JS.contains("cache:'no-store'"),
+            APP_JS.contains("cache: 'no-store'"),
             "evaluate fetch should bypass cache"
         );
         assert!(
-            APP_JS.contains("button.type='button';"),
+            APP_JS.contains("button.type = 'button';"),
             "scenario buttons should be explicitly non-submit"
         );
         assert!(
-            APP_JS.contains("SWAP:['source_network','destination_network','asset_symbol','asset_identifier','destination_address','expected_destination_address','swap_slippage_percent','transaction_origin']"),
+            APP_JS.contains("SWAP: [")
+                && APP_JS.contains("'destination_address'")
+                && APP_JS.contains("'expected_destination_address'"),
             "swap action must include destination fields required by engine input"
         );
         assert!(
@@ -274,13 +790,34 @@ mod tests {
             "action dropdown should share the same action-state handler"
         );
         assert!(
-            APP_JS.contains("setActionState(button.dataset.action||'SEND'"),
+            APP_JS.contains("applyManualActionChange(button.dataset.action || 'SEND')"),
             "action tabs should use shared action-state handler"
         );
         assert!(
+            APP_JS.contains("const actionChangedText = 'Transaction details changed. Run the preflight check again.';"),
+            "manual action changes should invalidate previous result copy"
+        );
+        assert!(
+            APP_JS.contains("function invalidateActionEvaluationState()")
+                && APP_JS.contains("clearPendingEvaluation();")
+                && APP_JS.contains("selectedScenarioIndex = null;")
+                && APP_JS.contains("updateScenarioHighlight();"),
+            "manual action changes should clear scenario highlight and pending evaluation"
+        );
+        assert!(
+            APP_JS.contains("form.addEventListener('input', handleManualFieldInput);")
+                && APP_JS.contains("form.addEventListener('change', handleManualFieldChange);"),
+            "manual form edits should use shared delegated invalidation listeners"
+        );
+        assert!(
+            APP_JS.contains("let isProgrammaticUpdate = false;")
+                && APP_JS.contains("function withProgrammaticUpdate(fn)"),
+            "programmatic scenario/reset updates should be guarded from manual invalidation"
+        );
+        assert!(
             APP_JS.contains("new AbortController()")
-                && APP_JS.contains("signal:controller.signal")
-                && APP_JS.contains("if(error&&error.name==='AbortError'){return}"),
+                && APP_JS.contains("signal: controller.signal")
+                && APP_JS.contains("if (error && error.name === 'AbortError')"),
             "evaluation requests should support abort and suppress abort errors"
         );
         assert!(
@@ -289,21 +826,24 @@ mod tests {
         );
         assert!(
             APP_JS
-                .matches("resetButton.addEventListener('click',resetExperience)")
+                .matches("resetButton.addEventListener('click', resetExperience)")
                 .count()
                 == 1,
             "reset should have exactly one click handler"
         );
         assert!(
-            APP_JS.contains("function resetExperience(){clearPendingEvaluation();form.reset();"),
+            APP_JS.contains("function resetExperience()")
+                && APP_JS.contains("clearPendingEvaluation();")
+                && APP_JS.contains("form.reset();"),
             "reset should call form.reset()"
         );
         assert!(
-            APP_JS.contains("setActionState('SEND',{clearIrrelevant:true,focus:false});"),
+            APP_JS.contains("setActionState('SEND', { clearIrrelevant: true, focus: false });"),
             "reset should restore SEND action tab"
         );
         assert!(
-            APP_JS.contains("selectedScenarioIndex=null;updateScenarioHighlight();"),
+            APP_JS.contains("selectedScenarioIndex = null;")
+                && APP_JS.contains("updateScenarioHighlight();"),
             "reset should clear selected scenario highlight state"
         );
     }
