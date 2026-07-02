@@ -317,7 +317,7 @@ fn main() {
 - [ ] `cargo run` summary: STOP 5, REVIEW 1, READY 1
 - [ ] All seven scenario names and decisions unchanged
 - [ ] All rule IDs in README table still fire for their test cases
-- [ ] API routes: `GET /health`, `GET /api/scenarios`, `POST /api/evaluate`, `OPTIONS /api/evaluate`, `GET /`, `GET /app.js`, `GET /styles.css`
+- [ ] API routes: `GET /health`, `GET /api/scenarios`, `POST /api/evaluate`, `OPTIONS /api/evaluate`, `GET /`, `GET /app.js`, `GET /styles.css` , `GET /assets/sendsure-mark.svg` , `GET /assets/sendsure-logo-horizontal.svg`
 - [ ] `cargo test` green
 - [ ] `cargo clippy -- -D warnings` clean
 
