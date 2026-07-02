@@ -102,8 +102,7 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         ("200 OK", "application/javascript", APP_JS.to_string(), "")
     } else if first.starts_with("GET /styles.css ") {
         ("200 OK", "text/css", STYLES_CSS.to_string(), "")
-    } else if first.starts_with("GET /favicon.svg ")
-        || first.starts_with("GET /assets/sendsure-mark.svg ")
+    } else if first.starts_with("GET /assets/sendsure-mark.svg ")
     {
         (
             "200 OK",

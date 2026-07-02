@@ -49,13 +49,16 @@ main()
             handle_client(stream)
               ├─ parse_http_request(stream)   // lib.rs
               └─ route by request line prefix:
-                   OPTIONS /api/evaluate  -> 204 + CORS headers
-                   GET  /health           -> {"status":"ok"}
-                   GET  /api/scenarios    -> demo_scenarios() JSON
-                   POST /api/evaluate     -> deserialize Intent -> evaluate() -> JSON
-                   GET  /                 -> embedded INDEX_HTML
-                   GET  /app.js           -> embedded APP_JS
-                   GET  /styles.css       -> embedded STYLES_CSS
+                   OPTIONS /api/evaluate                    -> 204 + CORS headers
+                   GET  /health                             -> {"status":"ok"}
+                   GET  /api/scenarios                      -> demo_scenarios() JSON
+                   POST /api/evaluate                       -> deserialize Intent -> evaluate() -> JSON
+                   GET  /                                   -> embedded INDEX_HTML
+                   GET  /app.js                             -> embedded APP_JS
+                   GET  /styles.css                         -> embedded STYLES_CSS
+                   GET /assets/sendsure-mark.svg            -> embedded logo
+                   GET /assets/sendsure-logo-horizontal.svg -> embedded banner
+                    
                    *                      -> 404 JSON
 ```
 
@@ -151,11 +154,6 @@ The current `lib.rs` mixes six concerns. The recommended split:
 ```
 sendsure-rust/
 ├── Cargo.toml
-├── src/
-│   ├── main.rs                      # entry: cli vs serve dispatch only
-│   └── lib.rs                       # re-exports public API
-├── crates/                          # optional: only if workspace split is needed later
-│   └── sendsure-core/               # alternative: keep flat src/ tree below instead
 ├── src/
 │   ├── models/
 │   │   ├── mod.rs
