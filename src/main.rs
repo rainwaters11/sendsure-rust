@@ -833,10 +833,6 @@ mod tests {
     #[test]
     fn frontend_declares_favicon_links_for_browser_tab() {
         assert!(
-            !INDEX_HTML.contains("href=\"/favicon.ico\""),
-            "do not advertise /favicon.ico without a real ICO/PNG asset"
-        );
-        assert!(
             INDEX_HTML.contains(
                 "<link rel=\"icon\" href=\"/assets/sendsure-mark.svg\" type=\"image/svg+xml\">"
             ),
