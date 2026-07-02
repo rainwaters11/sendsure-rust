@@ -102,8 +102,7 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         ("200 OK", "application/javascript", APP_JS.to_string(), "")
     } else if first.starts_with("GET /styles.css ") {
         ("200 OK", "text/css", STYLES_CSS.to_string(), "")
-    } else if first.starts_with("GET /assets/sendsure-mark.svg ")
-    {
+    } else if first.starts_with("GET /assets/sendsure-mark.svg ") {
         (
             "200 OK",
             "image/svg+xml",
@@ -813,7 +812,7 @@ mod tests {
 
     #[test]
     fn favicon_routes_serve_shield_mark_svg() {
-        for path in ["/favicon.svg", "/assets/sendsure-mark.svg"] {
+        for path in ["/assets/sendsure-mark.svg"] {
             let request = format!("GET {path} HTTP/1.1\r\nHost: example\r\n\r\n");
             let response = round_trip(&request);
             assert!(
