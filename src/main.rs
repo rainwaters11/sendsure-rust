@@ -194,6 +194,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <p><strong>READY</strong> = Looks safe to continue</p>
         </section>
 
+        <section class="card" aria-label="Why this matters">
+            <p><strong>Why this matters:</strong> Crypto actions can be permanent. SendSure gives users one last safety check before they send, swap, approve, or sign.</p>
+        </section>
+
     <div class="actions" role="tablist" aria-label="Intent action type">
       <button type="button" data-action="SEND" class="active">SEND</button>
       <button type="button" data-action="SWAP">SWAP</button>
@@ -205,10 +209,10 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <button type="button" id="check">Run preflight check</button>
 
     <h2>Try a real-world crypto mistake</h2>
-    <p>Start here: click 'XRP destination tag mismatch' to see how SendSure prevents a common irreversible mistake.</p>
+    <p>Recommended first demo: start with #1 to see how SendSure catches a destination tag mistake.</p>
     <div id="scenarios"></div>
 
-    <h2>Intent form</h2>
+    <h2>Transaction details</h2>
     <form id="intent-form">
       <select name="action_type">
         <option>SEND</option>
@@ -239,7 +243,9 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
     <button type="button" id="continue" disabled>Continue</button>
 
-        <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
+                <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
+                <p class="note">Demo only. SendSure does not provide financial advice or replace wallet review.</p>
+                <p class="note">Built by Misty Waters with collaboration from Aman Khan for H.E.R. DAO Rust School.</p>
   </main>
   <script src="/app.js"></script>
 </body>
@@ -602,17 +608,17 @@ function buildIntentFromForm() {
 function applyContinueState(decision) {
     if (decision === 'STOP') {
         cont.disabled = true;
-        cont.textContent = 'Fix issue to continue';
+        cont.textContent = 'Fix issue first';
         return;
     }
     if (decision === 'REVIEW') {
         cont.disabled = false;
-        cont.textContent = 'Acknowledge risk and continue';
+        cont.textContent = 'I understand the risk';
         return;
     }
     if (decision === 'READY') {
         cont.disabled = false;
-        cont.textContent = 'Continue to wallet';
+        cont.textContent = 'Ready for wallet review';
         return;
     }
     cont.disabled = true;
@@ -962,9 +968,9 @@ mod tests {
         );
         assert!(
             APP_JS.contains("function applyContinueState(decision)")
-                && APP_JS.contains("Fix issue to continue")
-                && APP_JS.contains("Acknowledge risk and continue")
-                && APP_JS.contains("Continue to wallet"),
+                && APP_JS.contains("Fix issue first")
+                && APP_JS.contains("I understand the risk")
+                && APP_JS.contains("Ready for wallet review"),
             "continue button label/state should be decision-driven through one shared function"
         );
         assert!(
