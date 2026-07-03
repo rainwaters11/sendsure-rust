@@ -183,7 +183,16 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <img src="/assets/sendsure-logo-horizontal.svg" alt="SendSure — Preflight safety before crypto actions become permanent." class="brand-logo" width="760" height="180" decoding="async">
       </div>
       <p class="tagline">Wallet-agnostic deterministic transaction preflight safety.</p>
+            <p>SendSure helps crypto users catch risky transaction mistakes before they become permanent.</p>
+            <p>No wallet connection required for this demo. Click a scenario below to see how SendSure responds.</p>
     </header>
+
+        <section class="card" aria-label="Decision legend">
+            <h2>Decision legend</h2>
+            <p><strong>STOP</strong> = Do not continue</p>
+            <p><strong>REVIEW</strong> = Slow down and check details</p>
+            <p><strong>READY</strong> = Looks safe to continue</p>
+        </section>
 
     <div class="actions" role="tablist" aria-label="Intent action type">
       <button type="button" data-action="SEND" class="active">SEND</button>
@@ -192,10 +201,11 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <button type="button" data-action="SIGN">SIGN</button>
     </div>
 
-    <button type="button" disabled>Wallet adapters — next phase</button>
+    <p>Wallet connection coming next. This demo uses safe sample transactions only.</p>
     <button type="button" id="check">Run preflight check</button>
 
-    <h2>Demo scenarios</h2>
+    <h2>Try a real-world crypto mistake</h2>
+    <p>Start here: click 'XRP destination tag mismatch' to see how SendSure prevents a common irreversible mistake.</p>
     <div id="scenarios"></div>
 
     <h2>Intent form</h2>
@@ -212,13 +222,14 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <input name="asset_identifier" placeholder="Token or asset identifier">
       <input name="destination_address" placeholder="Destination address">
       <input name="expected_destination_address" placeholder="Expected destination address">
-      <input name="entered_destination_tag_or_memo" placeholder="Entered tag or memo">
-      <input name="expected_destination_tag_or_memo" placeholder="Expected tag or memo">
+    <input name="entered_destination_tag_or_memo" placeholder="Entered destination tag or memo">
+    <input name="expected_destination_tag_or_memo" placeholder="Expected destination tag or memo">
       <input name="contract_address" placeholder="Contract address">
       <input name="approval_amount_or_scope" placeholder="Approval amount or scope">
       <input name="swap_slippage_percent" type="number" step="0.1" placeholder="Swap slippage %">
       <input name="transaction_origin" placeholder="Transaction origin">
-      <label><input name="asset_was_unsolicited" type="checkbox"> Asset was unsolicited</label>
+    <label><input name="asset_was_unsolicited" type="checkbox"> I did not ask for this token, NFT, or airdrop</label>
+    <p>Use this for suspicious airdrops or surprise assets asking you to sign.</p>
       <div class="form-buttons">
         <button type="submit" id="evaluate">Evaluate intent</button>
         <button type="button" id="reset">Reset</button>
@@ -228,7 +239,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
     <button type="button" id="continue" disabled>Continue</button>
 
-    <p class="note">Deterministic Rust rules-not an LLM-make the decision. SendSure does not request seed phrases or private keys and cannot block actions performed outside this application.</p>
+        <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
   </main>
   <script src="/app.js"></script>
 </body>
@@ -279,7 +290,6 @@ const fieldVisibility = {
         'entered_destination_tag_or_memo',
         'expected_destination_tag_or_memo',
         'transaction_origin',
-        'asset_was_unsolicited',
     ],
     SWAP: [
         'source_network',
