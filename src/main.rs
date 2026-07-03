@@ -1,5 +1,6 @@
 use sendsure_rust::{demo_scenarios, evaluate, parse_http_request, Decision, Intent, Registries};
 use std::io::Write;
+use std::io::{Error, ErrorKind};
 use std::net::{TcpListener, TcpStream};
 
 fn main() {
@@ -46,9 +47,36 @@ fn serve(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     println!("SendSure server listening on http://{addr}");
     for stream in listener.incoming() {
-        handle_client(stream?)?;
+        match stream {
+            Ok(stream) => {
+                if let Err(error) = handle_client(stream) {
+                    if is_ignorable_connection_error(&error) {
+                        eprintln!("client connection error (ignored): {error}");
+                    } else {
+                        eprintln!("client connection error: {error}");
+                    }
+                }
+            }
+            Err(error) => {
+                if is_ignorable_connection_error(&error) {
+                    eprintln!("connection accept error (ignored): {error}");
+                } else {
+                    eprintln!("connection accept error: {error}");
+                }
+            }
+        }
     }
     Ok(())
+}
+
+fn is_ignorable_connection_error(error: &Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::UnexpectedEof
+    )
 }
 
 fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
