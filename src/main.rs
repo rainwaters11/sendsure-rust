@@ -194,6 +194,14 @@ const INDEX_HTML: &str = r#"<!doctype html>
             <p><strong>READY</strong> = Looks safe to continue</p>
         </section>
 
+        <section class="card" aria-label="How to use this demo">
+            <h2>How to use this demo</h2>
+            <p>1. Choose a sample crypto action.</p>
+            <p>2. Click a real-world mistake below.</p>
+            <p>3. SendSure will return READY, REVIEW, or STOP before anything is sent.</p>
+            <p>This demo uses simulated transaction details. Wallet connection is coming next.</p>
+        </section>
+
         <section class="card" aria-label="Why this matters">
             <p><strong>Why this matters:</strong> Crypto actions can be permanent. SendSure gives users one last safety check before they send, swap, approve, or sign.</p>
         </section>
@@ -207,6 +215,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     <p>Wallet connection coming next. This demo uses safe sample transactions only.</p>
     <button type="button" id="check">Run preflight check</button>
+    <p>Current demo mode: SendSure is using safe sample transactions so you can test the safety engine without connecting a wallet.</p>
 
     <h2>Try a real-world crypto mistake</h2>
     <p>Recommended first demo: start with #1 to see how SendSure catches a destination tag mistake.</p>
@@ -242,6 +251,14 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
     <button type="button" id="continue" disabled>Continue</button>
+
+        <section class="card" aria-label="Coming next">
+            <h2>Coming next</h2>
+            <p>Wallet integration</p>
+            <p>Real transaction previews</p>
+            <p>Expanded token and network registries</p>
+            <p>Browser extension / wallet API support</p>
+        </section>
 
                 <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
                 <p class="note">Demo only. SendSure does not provide financial advice or replace wallet review.</p>
