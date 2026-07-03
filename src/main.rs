@@ -235,14 +235,24 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <input name="asset_identifier" placeholder="Token or asset identifier">
       <input name="destination_address" placeholder="Destination address">
       <input name="expected_destination_address" placeholder="Expected destination address">
-    <input name="entered_destination_tag_or_memo" placeholder="Entered destination tag or memo">
-    <input name="expected_destination_tag_or_memo" placeholder="Expected destination tag or memo">
+            <div class="field-group" data-field-group="destination-tag">
+                <input name="entered_destination_tag_or_memo" placeholder="Destination tag entered in wallet">
+                <input name="expected_destination_tag_or_memo" placeholder="Expected destination tag from exchange/deposit page">
+                <p class="field-help" id="destination-tag-help">For XRP/XLM-style deposits, compare the tag or memo shown by the exchange with the one entered before sending.</p>
+            </div>
       <input name="contract_address" placeholder="Contract address">
       <input name="approval_amount_or_scope" placeholder="Approval amount or scope">
-      <input name="swap_slippage_percent" type="number" step="0.1" placeholder="Swap slippage %">
+            <div class="field-group" data-field-group="swap-slippage">
+                <label for="swap-slippage-range">Slippage tolerance</label>
+                <input id="swap-slippage-range" type="range" min="0" max="15" step="0.1" value="0">
+                <input name="swap_slippage_percent" type="number" step="0.1" min="0" max="15" placeholder="Swap slippage %">
+                <p class="field-help" id="swap-slippage-help">Higher slippage gives a swap more room to move, but can increase risk.</p>
+            </div>
       <input name="transaction_origin" placeholder="Transaction origin">
-    <label><input name="asset_was_unsolicited" type="checkbox"> I did not ask for this token, NFT, or airdrop</label>
-    <p>Use this for suspicious airdrops or surprise assets asking you to sign.</p>
+            <div class="field-group" data-field-group="asset-was-unsolicited">
+                <label><input name="asset_was_unsolicited" type="checkbox"> I did not ask for this token, NFT, or airdrop</label>
+                <p class="field-help">Use this for suspicious airdrops or surprise assets asking you to sign.</p>
+            </div>
       <div class="form-buttons">
         <button type="submit" id="evaluate">Evaluate intent</button>
         <button type="button" id="reset">Reset</button>
@@ -268,7 +278,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 </body>
 </html>"#;
 
-const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.site-header{margin-bottom:24px}.brand-banner{padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#101927 0%,#161b22 52%,#12283a 100%);border:1px solid #30363d;overflow:hidden;text-align:center}.brand-logo{display:block;width:min(100%,680px);max-width:100%;height:auto;margin:0 auto}.tagline{margin:14px 0 0;color:#c9d1d9;max-width:70ch;line-height:1.5}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
+const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.site-header{margin-bottom:24px}.brand-banner{padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#101927 0%,#161b22 52%,#12283a 100%);border:1px solid #30363d;overflow:hidden;text-align:center}.brand-logo{display:block;width:min(100%,680px);max-width:100%;height:auto;margin:0 auto}.tagline{margin:14px 0 0;color:#c9d1d9;max-width:70ch;line-height:1.5}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.field-group{display:grid;gap:8px}.field-group label{font-weight:600}.field-group input[type=range]{width:100%}.field-help{margin:0;color:#c9d1d9;line-height:1.45;font-size:.95rem}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
 
 const APP_JS: &str = r##"
 const result = document.getElementById('result');
@@ -278,6 +288,7 @@ const evaluateButton = document.getElementById('evaluate');
 const resetButton = document.getElementById('reset');
 const scenarioBox = document.getElementById('scenarios');
 const checkButton = document.getElementById('check');
+const swapSlippageRange = document.getElementById('swap-slippage-range');
 const actionButtons = [...document.querySelectorAll('.actions button')];
 
 const evaluateDefaultLabel = (evaluateButton.textContent || 'Evaluate intent').trim();
@@ -384,7 +395,7 @@ function fieldContainer(field) {
     if (!field) {
         return null;
     }
-    return field.type === 'checkbox' && field.parentElement ? field.parentElement : field;
+    return field.closest('[data-field-group]') || (field.type === 'checkbox' && field.parentElement ? field.parentElement : field);
 }
 
 function clearFieldValue(name) {
@@ -394,6 +405,10 @@ function clearFieldValue(name) {
     }
     if (field.type === 'checkbox') {
         field.checked = false;
+        return;
+    }
+    if (name === 'swap_slippage_percent') {
+        setSwapSlippageValue('0');
         return;
     }
     if (name !== 'action_type') {
@@ -410,6 +425,16 @@ function setFieldVisibility(name, visible) {
     if (container) {
         container.hidden = !visible;
         container.classList.toggle('is-hidden', !visible);
+    }
+}
+
+function setSwapSlippageValue(value) {
+    const nextValue = value == null || value === '' ? '0' : String(value);
+    if (formFields.swap_slippage_percent) {
+        formFields.swap_slippage_percent.value = nextValue;
+    }
+    if (swapSlippageRange) {
+        swapSlippageRange.value = nextValue;
     }
 }
 
@@ -580,14 +605,23 @@ function handleManualFieldChange(event) {
     invalidateActionEvaluationState();
 }
 
-function populateScenario(intent) {
+function populateScenario(intent, scenarioName) {
     fieldNames.forEach((name) => {
         const field = formFields[name];
         if (!field) {
             return;
         }
+        if (name === 'swap_slippage_percent') {
+            setSwapSlippageValue(intent?.[name]);
+            return;
+        }
+        if (name === 'expected_destination_tag_or_memo') {
+            field.value = scenarioName === 'XRP destination tag mismatch' ? '482901' : blank(intent?.[name]);
+            return;
+        }
         field.value = blank(intent?.[name]);
     });
+    setSwapSlippageValue(intent?.swap_slippage_percent);
     formFields.asset_was_unsolicited.checked = Boolean(intent?.asset_was_unsolicited);
 }
 
@@ -791,6 +825,20 @@ formFields.action_type.addEventListener('change', () => {
 form.addEventListener('input', handleManualFieldInput);
 form.addEventListener('change', handleManualFieldChange);
 
+if (swapSlippageRange && formFields.swap_slippage_percent) {
+    swapSlippageRange.addEventListener('input', () => {
+        withProgrammaticUpdate(() => {
+            formFields.swap_slippage_percent.value = swapSlippageRange.value;
+        });
+        invalidateActionEvaluationState();
+    });
+    formFields.swap_slippage_percent.addEventListener('input', () => {
+        withProgrammaticUpdate(() => {
+            swapSlippageRange.value = formFields.swap_slippage_percent.value || '0';
+        });
+    });
+}
+
 checkButton.addEventListener('click', async () => {
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     await evaluateFromForm();
@@ -824,7 +872,7 @@ fetch('/api/scenarios', { cache: 'no-store' })
                         clearIrrelevant: false,
                         focus: false,
                     });
-                    populateScenario(scenario.intent);
+                    populateScenario(scenario.intent, scenario.name);
                 });
                 await evaluateFromForm();
             });
