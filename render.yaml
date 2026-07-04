@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: sendsure-rust
+    env: rust
+    buildCommand: cargo build --release
+    startCommand: ./target/release/sendsure-rust serve
+    healthCheckPath: /health

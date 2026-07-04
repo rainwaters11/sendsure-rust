@@ -4,7 +4,9 @@ use std::net::{TcpListener, TcpStream};
 
 fn main() {
     if std::env::args().any(|a| a == "serve") {
-        if let Err(error) = serve("127.0.0.1:8080") {
+        let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+        let addr = format!("0.0.0.0:{port}");
+        if let Err(error) = serve(&addr) {
             eprintln!("server error: {error}");
             std::process::exit(1);
         }
