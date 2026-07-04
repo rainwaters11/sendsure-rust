@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-labelledby="title desc">
+  <title id="title">SendSure shield mark</title>
+  <desc id="desc">A shield with a verification check and transaction flow.</desc>
+  <defs>
+    <linearGradient id="brandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2EA8FF"/>
+      <stop offset="52%" stop-color="#19D3C5"/>
+      <stop offset="100%" stop-color="#7CF5D8"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(20 10)">
+    <path d="M70 4 L128 28 V74 C128 111 105 137 70 153 C35 137 12 111 12 74 V28 Z"
+      fill="#0D1B2A" stroke="url(#brandGradient)" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M34 63 C48 42 84 36 104 53"
+      fill="none" stroke="#F4F8FC" stroke-width="9" stroke-linecap="round"/>
+    <path d="M103 53 L93 45 M103 53 L96 64"
+      fill="none" stroke="#F4F8FC" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M39 88 L61 110 L105 69"
+      fill="none" stroke="url(#brandGradient)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="31" cy="64" r="8" fill="#0D1B2A" stroke="#2EA8FF" stroke-width="5"/>
+    <circle cx="108" cy="55" r="8" fill="#0D1B2A" stroke="#19D3C5" stroke-width="5"/>
+  </g>
+</svg>
