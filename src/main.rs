@@ -486,9 +486,19 @@ function clearIrrelevantFieldValues(action) {
     });
 }
 
-function setActionState(action, { clearIrrelevant = false, focus = false } = {}) {
+function clearAllIntentFieldValues() {
+    allIntentFields.forEach((name) => {
+        if (name !== 'action_type') {
+            clearFieldValue(name);
+        }
+    });
+}
+
+function setActionState(action, { clearIrrelevant = false, clearAll = false, focus = false } = {}) {
     selectedAction = normalizeAction(action);
-    if (clearIrrelevant) {
+    if (clearAll) {
+        clearAllIntentFieldValues();
+    } else if (clearIrrelevant) {
         clearIrrelevantFieldValues(selectedAction);
     }
     actionButtons.forEach((button) => {
@@ -568,7 +578,7 @@ function invalidateActionEvaluationState() {
 
 function applyManualActionChange(action) {
     withProgrammaticUpdate(() => {
-        setActionState(action, { clearIrrelevant: true, focus: true });
+        setActionState(action, { clearAll: true, focus: true });
     });
     invalidateActionEvaluationState();
 }
@@ -701,16 +711,6 @@ function decisionSummary(decision) {
         return 'Do not continue until this issue is corrected.';
     }
     return '';
-}
-
-function clearAllIntentFieldValues() {
-    allIntentFields.forEach((name) => {
-        if (name === 'action_type') {
-            formFields.action_type.value = 'SEND';
-            return;
-        }
-        clearFieldValue(name);
-    });
 }
 
 function setResultIdle() {
