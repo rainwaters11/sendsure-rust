@@ -413,7 +413,7 @@ function clearFieldValue(name) {
         return;
     }
     if (name === 'swap_slippage_percent') {
-        setSwapSlippageValue('0');
+        setSwapSlippageValue(null);
         return;
     }
     if (name !== 'action_type') {
@@ -434,12 +434,15 @@ function setFieldVisibility(name, visible) {
 }
 
 function setSwapSlippageValue(value) {
-    const nextValue = value == null || value === '' ? '0' : String(value);
+    const text = value == null ? '' : String(value).trim();
+    const hasExplicitValue = text !== '';
+    const nextFieldValue = hasExplicitValue ? text : '';
+    const nextRangeValue = hasExplicitValue ? text : swapSlippageRange?.defaultValue || '0';
     if (formFields.swap_slippage_percent) {
-        formFields.swap_slippage_percent.value = nextValue;
+        formFields.swap_slippage_percent.value = nextFieldValue;
     }
     if (swapSlippageRange) {
-        swapSlippageRange.value = nextValue;
+        swapSlippageRange.value = nextRangeValue;
     }
 }
 
@@ -577,8 +580,12 @@ function invalidateActionEvaluationState() {
 }
 
 function applyManualActionChange(action) {
+    const nextAction = normalizeAction(action);
+    if (nextAction === selectedAction) {
+        return;
+    }
     withProgrammaticUpdate(() => {
-        setActionState(action, { clearAll: true, focus: true });
+        setActionState(nextAction, { clearIrrelevant: true, focus: true });
     });
     invalidateActionEvaluationState();
 }
@@ -1026,6 +1033,13 @@ mod tests {
             "action tabs should use shared action-state handler"
         );
         assert!(
+            APP_JS.contains("const nextAction = normalizeAction(action);")
+                && APP_JS.contains("if (nextAction === selectedAction) {")
+                && APP_JS.contains("setActionState(nextAction, { clearIrrelevant: true, focus: true });")
+                && !APP_JS.contains("setActionState(action, { clearAll: true, focus: true });"),
+            "re-clicking the active action should not clear fields; only real action changes should clear irrelevant fields"
+        );
+        assert!(
             APP_JS.contains("const actionChangedText = 'Transaction details changed. Run the preflight check again.';"),
             "manual action changes should invalidate previous result copy"
         );
@@ -1052,6 +1066,20 @@ mod tests {
             APP_JS.contains("let isProgrammaticUpdate = false;")
                 && APP_JS.contains("function withProgrammaticUpdate(fn)"),
             "programmatic scenario/reset updates should be guarded from manual invalidation"
+        );
+        assert!(
+            APP_JS.contains("const nextFieldValue = hasExplicitValue ? text : '';")
+                && APP_JS.contains(
+                    "const nextRangeValue = hasExplicitValue ? text : swapSlippageRange?.defaultValue || '0';"
+                )
+                && APP_JS.contains("return nullableNumber(formFields.swap_slippage_percent.value);"),
+            "untouched swap slippage should remain empty in the form and serialize as null while slider keeps its visual default"
+        );
+        assert!(
+            APP_JS.contains("SIGN: ['source_network', 'contract_address', 'transaction_origin', 'asset_was_unsolicited'],")
+                && APP_JS.contains("asset_was_unsolicited: isFieldVisible(selectedAction, 'asset_was_unsolicited')")
+                && APP_JS.contains("setFieldVisibility(name, isFieldVisible(action, name));"),
+            "asset_was_unsolicited should be visible only when SIGN is selected"
         );
         assert!(
             APP_JS.contains("new AbortController()")
