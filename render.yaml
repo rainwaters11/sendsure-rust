@@ -3,6 +3,7 @@ services:
     name: sendsure
     runtime: rust
     plan: free
+    # deploy/render is the stable live release branch; main is for development and refactoring.
     branch: deploy/render
     buildCommand: cargo build --release
     startCommand: ./target/release/sendsure-rust serve

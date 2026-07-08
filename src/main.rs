@@ -58,15 +58,21 @@ fn serve(addr: &str) -> std::io::Result<()> {
                 }
             }
             Err(error) => {
-                if is_ignorable_connection_error(&error) {
-                    eprintln!("connection accept error (ignored): {error}");
-                } else {
-                    eprintln!("connection accept error: {error}");
-                }
+                handle_accept_error(error)?;
             }
         }
     }
     Ok(())
+}
+
+fn handle_accept_error(error: Error) -> std::io::Result<()> {
+    if is_ignorable_connection_error(&error) {
+        eprintln!("connection accept error (ignored): {error}");
+        Ok(())
+    } else {
+        eprintln!("connection accept error: {error}");
+        Err(error)
+    }
 }
 
 fn is_ignorable_connection_error(error: &Error) -> bool {
@@ -898,8 +904,9 @@ fetch('/api/scenarios', { cache: 'no-store' })
 "##;
 #[cfg(test)]
 mod tests {
-    use super::handle_client;
+    use super::{handle_accept_error, handle_client, is_ignorable_connection_error};
     use super::{APP_JS, INDEX_HTML, STYLES_CSS};
+    use std::io::{Error, ErrorKind};
     use std::io::{Read, Write};
     use std::net::{Shutdown, TcpListener, TcpStream};
     use std::thread;
@@ -933,6 +940,34 @@ mod tests {
         assert!(response.contains("Access-Control-Allow-Methods: POST, OPTIONS\r\n"));
         assert!(response.contains("Access-Control-Allow-Headers: Content-Type\r\n"));
         assert!(response.contains("Content-Length: 0\r\n"));
+    }
+
+    #[test]
+    fn ignorable_connection_kinds_remain_ignorable() {
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::UnexpectedEof,
+        ] {
+            let error = Error::new(kind, "ignorable");
+            assert!(
+                is_ignorable_connection_error(&error),
+                "expected {:?} to be ignorable",
+                kind
+            );
+            assert!(
+                handle_accept_error(error).is_ok(),
+                "ignorable listener errors should be logged and ignored"
+            );
+        }
+    }
+
+    #[test]
+    fn non_ignorable_accept_error_is_returned() {
+        let error = Error::new(ErrorKind::AddrInUse, "non-ignorable");
+        let returned = handle_accept_error(error).expect_err("non-ignorable errors should return");
+        assert_eq!(returned.kind(), ErrorKind::AddrInUse);
     }
 
     #[test]
