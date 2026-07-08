@@ -1,10 +1,13 @@
 use sendsure_rust::{demo_scenarios, evaluate, parse_http_request, Decision, Intent, Registries};
 use std::io::Write;
+use std::io::{Error, ErrorKind};
 use std::net::{TcpListener, TcpStream};
 
 fn main() {
     if std::env::args().any(|a| a == "serve") {
-        if let Err(error) = serve("127.0.0.1:8080") {
+        let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
+        let address = format!("0.0.0.0:{port}");
+        if let Err(error) = serve(&address) {
             eprintln!("server error: {error}");
             std::process::exit(1);
         }
@@ -44,9 +47,42 @@ fn serve(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     println!("SendSure server listening on http://{addr}");
     for stream in listener.incoming() {
-        handle_client(stream?)?;
+        match stream {
+            Ok(stream) => {
+                if let Err(error) = handle_client(stream) {
+                    if is_ignorable_connection_error(&error) {
+                        eprintln!("client connection error (ignored): {error}");
+                    } else {
+                        eprintln!("client connection error: {error}");
+                    }
+                }
+            }
+            Err(error) => {
+                handle_accept_error(error)?;
+            }
+        }
     }
     Ok(())
+}
+
+fn handle_accept_error(error: Error) -> std::io::Result<()> {
+    if is_ignorable_connection_error(&error) {
+        eprintln!("connection accept error (ignored): {error}");
+        Ok(())
+    } else {
+        eprintln!("connection accept error: {error}");
+        Err(error)
+    }
+}
+
+fn is_ignorable_connection_error(error: &Error) -> bool {
+    matches!(
+        error.kind(),
+        ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::UnexpectedEof
+    )
 }
 
 fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
@@ -102,7 +138,9 @@ fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
         ("200 OK", "application/javascript", APP_JS.to_string(), "")
     } else if first.starts_with("GET /styles.css ") {
         ("200 OK", "text/css", STYLES_CSS.to_string(), "")
-    } else if first.starts_with("GET /assets/sendsure-mark.svg ") {
+    } else if first.starts_with("GET /favicon.svg ")
+        || first.starts_with("GET /assets/sendsure-mark.svg ")
+    {
         (
             "200 OK",
             "image/svg+xml",
@@ -151,7 +189,33 @@ const INDEX_HTML: &str = r#"<!doctype html>
         <img src="/assets/sendsure-logo-horizontal.svg" alt="SendSure — Preflight safety before crypto actions become permanent." class="brand-logo" width="760" height="180" decoding="async">
       </div>
       <p class="tagline">Wallet-agnostic deterministic transaction preflight safety.</p>
+            <p>SendSure helps crypto users catch risky transaction mistakes before they become permanent.</p>
+            <p>No wallet connection required for this demo. Click a scenario below to see how SendSure responds.</p>
     </header>
+
+        <section class="safety-key-bar" aria-label="Safety Key">
+            <div class="safety-key-title">Safety Key</div>
+            <div class="safety-key-items">
+                <span class="safety-key-pill safety-stop">STOP</span>
+                <span class="safety-key-text">= Do not continue</span>
+                <span class="safety-key-pill safety-review">REVIEW</span>
+                <span class="safety-key-text">= Slow down and check details</span>
+                <span class="safety-key-pill safety-ready">READY</span>
+                <span class="safety-key-text">= Looks safe to continue</span>
+            </div>
+        </section>
+
+        <section class="card" aria-label="How to use this demo">
+            <h2>How to use this demo</h2>
+            <p>1. Choose a sample crypto action.</p>
+            <p>2. Click a real-world mistake below.</p>
+            <p>3. SendSure will return READY, REVIEW, or STOP before anything is sent.</p>
+            <p>This demo uses simulated transaction details. Wallet connection is coming next.</p>
+        </section>
+
+        <section class="card" aria-label="Why this matters">
+            <p><strong>Why this matters:</strong> Crypto actions can be permanent. SendSure gives users one last safety check before they send, swap, approve, or sign.</p>
+        </section>
 
     <div class="actions" role="tablist" aria-label="Intent action type">
       <button type="button" data-action="SEND" class="active">SEND</button>
@@ -160,13 +224,15 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <button type="button" data-action="SIGN">SIGN</button>
     </div>
 
-    <button type="button" disabled>Wallet adapters — next phase</button>
+    <p>Wallet connection coming next. This demo uses safe sample transactions only.</p>
     <button type="button" id="check">Run preflight check</button>
+    <p>Current demo mode: SendSure is using safe sample transactions so you can test the safety engine without connecting a wallet.</p>
 
-    <h2>Demo scenarios</h2>
+    <h2>Try a real-world crypto mistake</h2>
+    <p>Recommended first demo: start with #1 to see how SendSure catches a destination tag mistake.</p>
     <div id="scenarios"></div>
 
-    <h2>Intent form</h2>
+    <h2>Transaction details</h2>
     <form id="intent-form">
       <select name="action_type">
         <option>SEND</option>
@@ -180,13 +246,24 @@ const INDEX_HTML: &str = r#"<!doctype html>
       <input name="asset_identifier" placeholder="Token or asset identifier">
       <input name="destination_address" placeholder="Destination address">
       <input name="expected_destination_address" placeholder="Expected destination address">
-      <input name="entered_destination_tag_or_memo" placeholder="Entered tag or memo">
-      <input name="expected_destination_tag_or_memo" placeholder="Expected tag or memo">
+            <div class="field-group destination-tag-group" data-field-group="destination-tag">
+                <input name="entered_destination_tag_or_memo" placeholder="Destination tag entered in wallet">
+                <input name="expected_destination_tag_or_memo" placeholder="Expected destination tag from exchange/deposit page">
+                <p class="field-help" id="destination-tag-help">For XRP/XLM-style deposits, compare the tag or memo shown by the exchange with the one entered before sending.</p>
+            </div>
       <input name="contract_address" placeholder="Contract address">
       <input name="approval_amount_or_scope" placeholder="Approval amount or scope">
-      <input name="swap_slippage_percent" type="number" step="0.1" placeholder="Swap slippage %">
-      <input name="transaction_origin" placeholder="Transaction origin">
-      <label><input name="asset_was_unsolicited" type="checkbox"> Asset was unsolicited</label>
+            <div class="field-group" data-field-group="swap-slippage">
+                <label for="swap-slippage-range">Slippage tolerance</label>
+                <input id="swap-slippage-range" type="range" min="0" max="15" step="0.1" value="0">
+                <input name="swap_slippage_percent" type="number" step="0.1" min="0" max="15" placeholder="Swap slippage %">
+                <p class="field-help" id="swap-slippage-help">Higher slippage gives a swap more room to move, but can increase risk.</p>
+            </div>
+    <input name="transaction_origin" placeholder="Transaction origin">
+        <div class="field-group unsolicited-group" data-field-group="asset-was-unsolicited">
+            <label><input name="asset_was_unsolicited" type="checkbox"> I did not ask for this token, NFT, or airdrop</label>
+            <p class="field-help">Use this for suspicious airdrops or surprise assets asking you to sign.</p>
+        </div>
       <div class="form-buttons">
         <button type="submit" id="evaluate">Evaluate intent</button>
         <button type="button" id="reset">Reset</button>
@@ -196,13 +273,23 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
     <button type="button" id="continue" disabled>Continue</button>
 
-    <p class="note">Deterministic Rust rules-not an LLM-make the decision. SendSure does not request seed phrases or private keys and cannot block actions performed outside this application.</p>
+        <section class="card" aria-label="Coming next">
+            <h2>Coming next</h2>
+            <p>Wallet integration</p>
+            <p>Real transaction previews</p>
+            <p>Expanded token and network registries</p>
+            <p>Browser extension / wallet API support</p>
+        </section>
+
+                <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
+                <p class="note">Demo only. SendSure does not provide financial advice or replace wallet review.</p>
+                <p class="note">Built by Misty Waters with collaboration from Aman Khan for H.E.R. DAO Rust School.</p>
   </main>
   <script src="/app.js"></script>
 </body>
 </html>"#;
 
-const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.site-header{margin-bottom:24px}.brand-banner{padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#101927 0%,#161b22 52%,#12283a 100%);border:1px solid #30363d;overflow:hidden;text-align:center}.brand-logo{display:block;width:min(100%,680px);max-width:100%;height:auto;margin:0 auto}.tagline{margin:14px 0 0;color:#c9d1d9;max-width:70ch;line-height:1.5}.actions,form,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.form-buttons{display:flex;gap:10px}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,input,select{padding:12px;border-radius:8px;border:1px solid #30363d}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}"#;
+const STYLES_CSS: &str = r#"body{font-family:system-ui;margin:0;background:#0d1117;color:#f0f6fc}main{max-width:980px;margin:auto;padding:32px}.site-header{margin-bottom:24px}.brand-banner{padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#101927 0%,#161b22 52%,#12283a 100%);border:1px solid #30363d;overflow:hidden;text-align:center}.brand-logo{display:block;width:min(100%,680px);max-width:100%;height:auto;margin:0 auto}.tagline{margin:14px 0 0;color:#c9d1d9;max-width:70ch;line-height:1.5}.safety-key-bar{position:sticky;top:12px;z-index:8;display:flex;flex-wrap:wrap;gap:10px 12px;align-items:center;margin:0 0 18px;padding:12px 14px;border:1px solid #30363d;border-radius:14px;background:rgba(22,27,34,.96);backdrop-filter:blur(10px);box-shadow:0 8px 28px rgba(1,4,9,.24)}.safety-key-title{font-size:.85rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#c9d1d9}.safety-key-items{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}.safety-key-pill,.safety-key-text{display:inline-flex;align-items:center;min-height:28px}.safety-key-pill{padding:4px 10px;border-radius:999px;border:1px solid #30363d;font-size:.75rem;font-weight:800;letter-spacing:.03em;line-height:1}.safety-key-text{font-size:.9rem;color:#c9d1d9;line-height:1.2}.safety-stop{background:#f85149;color:#0d1117}.safety-review{background:#d29922;color:#0d1117}.safety-ready{background:#3fb950;color:#0d1117}.actions,#scenarios{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:start;grid-auto-rows:min-content;column-gap:12px;row-gap:12px}.actions,.form-buttons{grid-column:1/-1}.form-buttons{display:flex;gap:10px;align-items:start;align-self:start}form>input,form>select{align-self:start;height:44px;min-height:44px;max-height:44px;width:100%;min-width:0}.field-group{display:grid;gap:8px;align-self:start;align-content:start;min-height:0}.destination-tag-group{grid-column:span 2;display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:12px;margin-bottom:8px;align-content:start}.destination-tag-group .field-help{grid-column:1/-1;max-width:56ch;margin-top:2px}.unsolicited-group{gap:6px}.unsolicited-group label{display:flex;align-items:flex-start;gap:8px}.field-group label{font-weight:600}.field-group input[type=range]{width:100%}.field-group input:not([type=range]):not([type=checkbox]){height:44px;min-height:44px;max-height:44px;width:100%;min-width:0}.field-group input[type=checkbox]{width:16px;height:16px;min-height:16px;max-height:16px;margin:2px 0 0;padding:0}.field-help{margin:0;color:#8b949e;line-height:1.3;font-size:.84rem}.actions button.active{outline:2px solid #58a6ff;outline-offset:1px}button,select,input:not([type=range]):not([type=checkbox]){height:44px;min-height:44px;max-height:44px;width:100%;min-width:0;padding:10px 12px;border-radius:8px;border:1px solid #30363d;box-sizing:border-box;align-self:start}button{background:#238636;color:white;cursor:pointer}button:disabled{background:#30363d;cursor:not-allowed}.card{margin:24px 0;padding:24px;border-radius:16px;background:#161b22;border:1px solid #30363d}.STOP{border-color:#f85149}.REVIEW{border-color:#d29922}.READY{border-color:#3fb950}.decision-banner{display:grid;gap:12px}.decision-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}.decision-title{margin:0;font-size:2rem;line-height:1;font-weight:800;letter-spacing:.02em}.decision-summary{margin:0;color:#c9d1d9}.rule-line{margin:0;display:flex;align-items:center;gap:8px;color:#c9d1d9}.rule-pill{display:inline-block;padding:4px 8px;border-radius:999px;background:#0d1117;border:1px solid #30363d;color:#f0f6fc;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,Liberation Mono,monospace;font-size:.78rem}.decision-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:.78rem;font-weight:700;letter-spacing:.03em;border:1px solid #30363d;background:#0d1117;color:#f0f6fc}.decision-badge.STOP{border-color:#f85149;color:#f85149}.decision-badge.REVIEW{border-color:#d29922;color:#d29922}.decision-badge.READY{border-color:#3fb950;color:#3fb950}.decision-body p{margin:0 0 10px}.decision-body p:last-child{margin-bottom:0}.trust-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}.trust-chip{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:.78rem}.note{color:#8b949e}.scenario-selected{outline:2px solid #58a6ff;outline-offset:1px}.is-hidden{display:none!important}@media (max-width:700px){main{padding:14px}.card{margin:12px 0;padding:14px}.brand-banner{padding:10px 12px;border-radius:12px}.brand-logo{width:100%;max-width:100%;height:auto}.safety-key-bar{position:static;top:auto;z-index:auto;box-shadow:none}.safety-key-items{gap:6px 8px}.safety-key-text{font-size:.85rem}body{overflow-x:hidden}.actions{grid-template-columns:repeat(2,minmax(0,1fr))}#scenarios{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}form{grid-template-columns:1fr}.destination-tag-group{grid-column:1/-1;grid-template-columns:1fr;margin-bottom:0}.form-buttons{flex-wrap:wrap}.form-buttons button{flex:1 1 auto}.decision-title{font-size:1.4rem}.tagline{max-width:100%;font-size:.95rem}.site-header p{line-height:1.4}}"#;
 
 const APP_JS: &str = r##"
 const result = document.getElementById('result');
@@ -212,6 +299,7 @@ const evaluateButton = document.getElementById('evaluate');
 const resetButton = document.getElementById('reset');
 const scenarioBox = document.getElementById('scenarios');
 const checkButton = document.getElementById('check');
+const swapSlippageRange = document.getElementById('swap-slippage-range');
 const actionButtons = [...document.querySelectorAll('.actions button')];
 
 const evaluateDefaultLabel = (evaluateButton.textContent || 'Evaluate intent').trim();
@@ -247,7 +335,6 @@ const fieldVisibility = {
         'entered_destination_tag_or_memo',
         'expected_destination_tag_or_memo',
         'transaction_origin',
-        'asset_was_unsolicited',
     ],
     SWAP: [
         'source_network',
@@ -319,7 +406,7 @@ function fieldContainer(field) {
     if (!field) {
         return null;
     }
-    return field.type === 'checkbox' && field.parentElement ? field.parentElement : field;
+    return field.closest('[data-field-group]') || (field.type === 'checkbox' && field.parentElement ? field.parentElement : field);
 }
 
 function clearFieldValue(name) {
@@ -329,6 +416,10 @@ function clearFieldValue(name) {
     }
     if (field.type === 'checkbox') {
         field.checked = false;
+        return;
+    }
+    if (name === 'swap_slippage_percent') {
+        setSwapSlippageValue(null);
         return;
     }
     if (name !== 'action_type') {
@@ -345,6 +436,19 @@ function setFieldVisibility(name, visible) {
     if (container) {
         container.hidden = !visible;
         container.classList.toggle('is-hidden', !visible);
+    }
+}
+
+function setSwapSlippageValue(value) {
+    const text = value == null ? '' : String(value).trim();
+    const hasExplicitValue = text !== '';
+    const nextFieldValue = hasExplicitValue ? text : '';
+    const nextRangeValue = hasExplicitValue ? text : swapSlippageRange?.defaultValue || '0';
+    if (formFields.swap_slippage_percent) {
+        formFields.swap_slippage_percent.value = nextFieldValue;
+    }
+    if (swapSlippageRange) {
+        swapSlippageRange.value = nextRangeValue;
     }
 }
 
@@ -391,9 +495,19 @@ function clearIrrelevantFieldValues(action) {
     });
 }
 
-function setActionState(action, { clearIrrelevant = false, focus = false } = {}) {
+function clearAllIntentFieldValues() {
+    allIntentFields.forEach((name) => {
+        if (name !== 'action_type') {
+            clearFieldValue(name);
+        }
+    });
+}
+
+function setActionState(action, { clearIrrelevant = false, clearAll = false, focus = false } = {}) {
     selectedAction = normalizeAction(action);
-    if (clearIrrelevant) {
+    if (clearAll) {
+        clearAllIntentFieldValues();
+    } else if (clearIrrelevant) {
         clearIrrelevantFieldValues(selectedAction);
     }
     actionButtons.forEach((button) => {
@@ -472,8 +586,12 @@ function invalidateActionEvaluationState() {
 }
 
 function applyManualActionChange(action) {
+    const nextAction = normalizeAction(action);
+    if (nextAction === selectedAction) {
+        return;
+    }
     withProgrammaticUpdate(() => {
-        setActionState(action, { clearIrrelevant: true, focus: true });
+        setActionState(nextAction, { clearIrrelevant: true, focus: true });
     });
     invalidateActionEvaluationState();
 }
@@ -515,14 +633,23 @@ function handleManualFieldChange(event) {
     invalidateActionEvaluationState();
 }
 
-function populateScenario(intent) {
+function populateScenario(intent, scenarioName) {
     fieldNames.forEach((name) => {
         const field = formFields[name];
         if (!field) {
             return;
         }
+        if (name === 'swap_slippage_percent') {
+            setSwapSlippageValue(intent?.[name]);
+            return;
+        }
+        if (name === 'expected_destination_tag_or_memo') {
+            field.value = scenarioName === 'XRP destination tag mismatch' ? '482901' : blank(intent?.[name]);
+            return;
+        }
         field.value = blank(intent?.[name]);
     });
+    setSwapSlippageValue(intent?.swap_slippage_percent);
     formFields.asset_was_unsolicited.checked = Boolean(intent?.asset_was_unsolicited);
 }
 
@@ -560,17 +687,17 @@ function buildIntentFromForm() {
 function applyContinueState(decision) {
     if (decision === 'STOP') {
         cont.disabled = true;
-        cont.textContent = 'Fix issue to continue';
+        cont.textContent = 'Fix issue first';
         return;
     }
     if (decision === 'REVIEW') {
         cont.disabled = false;
-        cont.textContent = 'Acknowledge risk and continue';
+        cont.textContent = 'I understand the risk';
         return;
     }
     if (decision === 'READY') {
         cont.disabled = false;
-        cont.textContent = 'Continue to wallet';
+        cont.textContent = 'Ready for wallet review';
         return;
     }
     cont.disabled = true;
@@ -597,16 +724,6 @@ function decisionSummary(decision) {
         return 'Do not continue until this issue is corrected.';
     }
     return '';
-}
-
-function clearAllIntentFieldValues() {
-    allIntentFields.forEach((name) => {
-        if (name === 'action_type') {
-            formFields.action_type.value = 'SEND';
-            return;
-        }
-        clearFieldValue(name);
-    });
 }
 
 function setResultIdle() {
@@ -726,6 +843,20 @@ formFields.action_type.addEventListener('change', () => {
 form.addEventListener('input', handleManualFieldInput);
 form.addEventListener('change', handleManualFieldChange);
 
+if (swapSlippageRange && formFields.swap_slippage_percent) {
+    swapSlippageRange.addEventListener('input', () => {
+        withProgrammaticUpdate(() => {
+            formFields.swap_slippage_percent.value = swapSlippageRange.value;
+        });
+        invalidateActionEvaluationState();
+    });
+    formFields.swap_slippage_percent.addEventListener('input', () => {
+        withProgrammaticUpdate(() => {
+            swapSlippageRange.value = formFields.swap_slippage_percent.value || '0';
+        });
+    });
+}
+
 checkButton.addEventListener('click', async () => {
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     await evaluateFromForm();
@@ -759,7 +890,7 @@ fetch('/api/scenarios', { cache: 'no-store' })
                         clearIrrelevant: false,
                         focus: false,
                     });
-                    populateScenario(scenario.intent);
+                    populateScenario(scenario.intent, scenario.name);
                 });
                 await evaluateFromForm();
             });
@@ -773,8 +904,9 @@ fetch('/api/scenarios', { cache: 'no-store' })
 "##;
 #[cfg(test)]
 mod tests {
-    use super::handle_client;
-    use super::{APP_JS, INDEX_HTML};
+    use super::{handle_accept_error, handle_client, is_ignorable_connection_error};
+    use super::{APP_JS, INDEX_HTML, STYLES_CSS};
+    use std::io::{Error, ErrorKind};
     use std::io::{Read, Write};
     use std::net::{Shutdown, TcpListener, TcpStream};
     use std::thread;
@@ -811,8 +943,36 @@ mod tests {
     }
 
     #[test]
+    fn ignorable_connection_kinds_remain_ignorable() {
+        for kind in [
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::UnexpectedEof,
+        ] {
+            let error = Error::new(kind, "ignorable");
+            assert!(
+                is_ignorable_connection_error(&error),
+                "expected {:?} to be ignorable",
+                kind
+            );
+            assert!(
+                handle_accept_error(error).is_ok(),
+                "ignorable listener errors should be logged and ignored"
+            );
+        }
+    }
+
+    #[test]
+    fn non_ignorable_accept_error_is_returned() {
+        let error = Error::new(ErrorKind::AddrInUse, "non-ignorable");
+        let returned = handle_accept_error(error).expect_err("non-ignorable errors should return");
+        assert_eq!(returned.kind(), ErrorKind::AddrInUse);
+    }
+
+    #[test]
     fn favicon_routes_serve_shield_mark_svg() {
-        for path in ["/assets/sendsure-mark.svg"] {
+        for path in ["/favicon.svg", "/assets/sendsure-mark.svg"] {
             let request = format!("GET {path} HTTP/1.1\r\nHost: example\r\n\r\n");
             let response = round_trip(&request);
             assert!(
@@ -832,6 +992,10 @@ mod tests {
 
     #[test]
     fn frontend_declares_favicon_links_for_browser_tab() {
+        assert!(
+            !INDEX_HTML.contains("href=\"/favicon.ico\""),
+            "do not advertise /favicon.ico without a real ICO/PNG asset"
+        );
         assert!(
             INDEX_HTML.contains(
                 "<link rel=\"icon\" href=\"/assets/sendsure-mark.svg\" type=\"image/svg+xml\">"
@@ -904,6 +1068,13 @@ mod tests {
             "action tabs should use shared action-state handler"
         );
         assert!(
+            APP_JS.contains("const nextAction = normalizeAction(action);")
+                && APP_JS.contains("if (nextAction === selectedAction) {")
+                && APP_JS.contains("setActionState(nextAction, { clearIrrelevant: true, focus: true });")
+                && !APP_JS.contains("setActionState(action, { clearAll: true, focus: true });"),
+            "re-clicking the active action should not clear fields; only real action changes should clear irrelevant fields"
+        );
+        assert!(
             APP_JS.contains("const actionChangedText = 'Transaction details changed. Run the preflight check again.';"),
             "manual action changes should invalidate previous result copy"
         );
@@ -916,9 +1087,9 @@ mod tests {
         );
         assert!(
             APP_JS.contains("function applyContinueState(decision)")
-                && APP_JS.contains("Fix issue to continue")
-                && APP_JS.contains("Acknowledge risk and continue")
-                && APP_JS.contains("Continue to wallet"),
+                && APP_JS.contains("Fix issue first")
+                && APP_JS.contains("I understand the risk")
+                && APP_JS.contains("Ready for wallet review"),
             "continue button label/state should be decision-driven through one shared function"
         );
         assert!(
@@ -930,6 +1101,20 @@ mod tests {
             APP_JS.contains("let isProgrammaticUpdate = false;")
                 && APP_JS.contains("function withProgrammaticUpdate(fn)"),
             "programmatic scenario/reset updates should be guarded from manual invalidation"
+        );
+        assert!(
+            APP_JS.contains("const nextFieldValue = hasExplicitValue ? text : '';")
+                && APP_JS.contains(
+                    "const nextRangeValue = hasExplicitValue ? text : swapSlippageRange?.defaultValue || '0';"
+                )
+                && APP_JS.contains("return nullableNumber(formFields.swap_slippage_percent.value);"),
+            "untouched swap slippage should remain empty in the form and serialize as null while slider keeps its visual default"
+        );
+        assert!(
+            APP_JS.contains("SIGN: ['source_network', 'contract_address', 'transaction_origin', 'asset_was_unsolicited'],")
+                && APP_JS.contains("asset_was_unsolicited: isFieldVisible(selectedAction, 'asset_was_unsolicited')")
+                && APP_JS.contains("setFieldVisibility(name, isFieldVisible(action, name));"),
+            "asset_was_unsolicited should be visible only when SIGN is selected"
         );
         assert!(
             APP_JS.contains("new AbortController()")
@@ -946,6 +1131,13 @@ mod tests {
         assert!(
             INDEX_HTML.contains("<section id=\"result\" class=\"card\" aria-live=\"polite\">"),
             "result region should announce decision changes for assistive technologies"
+        );
+        assert!(
+            STYLES_CSS.contains("@media (max-width:700px){")
+                && STYLES_CSS.contains(
+                    ".safety-key-bar{position:static;top:auto;z-index:auto;box-shadow:none}"
+                ),
+            "mobile layout should disable sticky safety key bar to avoid overlap"
         );
         assert!(
             APP_JS.contains("function decisionSummary(decision)")
