@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="/assets/sendsure-mark.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/assets/sendsure-mark.svg">
+  <title>SendSure</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header class="site-header">
+      <div class="brand-banner">
+        <img src="/assets/sendsure-logo-horizontal.svg" alt="SendSure — Preflight safety before crypto actions become permanent." class="brand-logo" width="760" height="180" decoding="async">
+      </div>
+      <p class="tagline">Wallet-agnostic deterministic transaction preflight safety.</p>
+            <p>SendSure helps crypto users catch risky transaction mistakes before they become permanent.</p>
+            <p>No wallet connection required for this demo. Click a scenario below to see how SendSure responds.</p>
+    </header>
+
+        <section class="safety-key-bar" aria-label="Safety Key">
+            <div class="safety-key-title">Safety Key</div>
+            <div class="safety-key-items">
+                <span class="safety-key-pill safety-stop">STOP</span>
+                <span class="safety-key-text">= Do not continue</span>
+                <span class="safety-key-pill safety-review">REVIEW</span>
+                <span class="safety-key-text">= Slow down and check details</span>
+                <span class="safety-key-pill safety-ready">READY</span>
+                <span class="safety-key-text">= Looks safe to continue</span>
+            </div>
+        </section>
+
+        <section class="card" aria-label="How to use this demo">
+            <h2>How to use this demo</h2>
+            <p>1. Choose a sample crypto action.</p>
+            <p>2. Click a real-world mistake below.</p>
+            <p>3. SendSure will return READY, REVIEW, or STOP before anything is sent.</p>
+            <p>This demo uses simulated transaction details. Wallet connection is coming next.</p>
+        </section>
+
+        <section class="card" aria-label="Why this matters">
+            <p><strong>Why this matters:</strong> Crypto actions can be permanent. SendSure gives users one last safety check before they send, swap, approve, or sign.</p>
+        </section>
+
+    <div class="actions" role="tablist" aria-label="Intent action type">
+      <button type="button" data-action="SEND" class="active">SEND</button>
+      <button type="button" data-action="SWAP">SWAP</button>
+      <button type="button" data-action="APPROVE">APPROVE</button>
+      <button type="button" data-action="SIGN">SIGN</button>
+    </div>
+
+    <p>Wallet connection coming next. This demo uses safe sample transactions only.</p>
+    <button type="button" id="check">Run preflight check</button>
+    <p>Current demo mode: SendSure is using safe sample transactions so you can test the safety engine without connecting a wallet.</p>
+
+    <h2>Try a real-world crypto mistake</h2>
+    <p>Recommended first demo: start with #1 to see how SendSure catches a destination tag mistake.</p>
+    <div id="scenarios"></div>
+
+    <h2>Transaction details</h2>
+    <form id="intent-form">
+      <select name="action_type">
+        <option>SEND</option>
+        <option>SWAP</option>
+        <option>APPROVE</option>
+        <option>SIGN</option>
+      </select>
+      <input name="source_network" placeholder="Source network">
+      <input name="destination_network" placeholder="Destination network">
+      <input name="asset_symbol" placeholder="Asset symbol">
+      <input name="asset_identifier" placeholder="Token or asset identifier">
+      <input name="destination_address" placeholder="Destination address">
+      <input name="expected_destination_address" placeholder="Expected destination address">
+            <div class="field-group destination-tag-group" data-field-group="destination-tag">
+                <input name="entered_destination_tag_or_memo" placeholder="Destination tag entered in wallet">
+                <input name="expected_destination_tag_or_memo" placeholder="Expected destination tag from exchange/deposit page">
+                <p class="field-help" id="destination-tag-help">For XRP/XLM-style deposits, compare the tag or memo shown by the exchange with the one entered before sending.</p>
+            </div>
+      <input name="contract_address" placeholder="Contract address">
+      <input name="approval_amount_or_scope" placeholder="Approval amount or scope">
+            <div class="field-group" data-field-group="swap-slippage">
+                <label for="swap-slippage-range">Slippage tolerance</label>
+                <input id="swap-slippage-range" type="range" min="0" max="15" step="0.1" value="0">
+                <input name="swap_slippage_percent" type="number" step="0.1" min="0" max="15" placeholder="Swap slippage %">
+                <p class="field-help" id="swap-slippage-help">Higher slippage gives a swap more room to move, but can increase risk.</p>
+            </div>
+    <input name="transaction_origin" placeholder="Transaction origin">
+        <div class="field-group unsolicited-group" data-field-group="asset-was-unsolicited">
+            <label><input name="asset_was_unsolicited" type="checkbox"> I did not ask for this token, NFT, or airdrop</label>
+            <p class="field-help">Use this for suspicious airdrops or surprise assets asking you to sign.</p>
+        </div>
+      <div class="form-buttons">
+        <button type="submit" id="evaluate">Evaluate intent</button>
+        <button type="button" id="reset">Reset</button>
+      </div>
+    </form>
+
+    <section id="result" class="card" aria-live="polite">Choose a demo scenario or enter transaction details to begin.</section>
+    <button type="button" id="continue" disabled>Continue</button>
+
+        <section class="card" aria-label="Coming next">
+            <h2>Coming next</h2>
+            <p>Wallet integration</p>
+            <p>Real transaction previews</p>
+            <p>Expanded token and network registries</p>
+            <p>Browser extension / wallet API support</p>
+        </section>
+
+                <p class="note">Deterministic Rust rules — not an LLM — make the decision. SendSure never requests seed phrases or private keys and cannot block actions performed outside this application.</p>
+                <p class="note">Demo only. SendSure does not provide financial advice or replace wallet review.</p>
+                <p class="note">Built by Misty Waters with collaboration from Aman Khan for H.E.R. DAO Rust School.</p>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
