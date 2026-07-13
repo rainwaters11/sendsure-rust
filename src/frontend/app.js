@@ -356,7 +356,6 @@ function populateScenario(intent, scenarioName) {
         }
         field.value = blank(intent?.[name]);
     });
-    setSwapSlippageValue(intent?.swap_slippage_percent);
     formFields.asset_was_unsolicited.checked = Boolean(intent?.asset_was_unsolicited);
 }
 
@@ -466,7 +465,12 @@ function renderResult(payload) {
 
 function renderError(message) {
     result.className = 'card';
-    result.innerHTML = `<h2>Error</h2><p>${message}</p>`;
+    result.replaceChildren();
+    const heading = document.createElement('h2');
+    heading.textContent = 'Error';
+    const paragraph = document.createElement('p');
+    paragraph.textContent = message;
+    result.append(heading, paragraph);
     applyContinueState();
     evaluateButton.disabled = false;
     checkButton.disabled = false;
@@ -475,8 +479,11 @@ function renderError(message) {
 }
 
 async function evaluateIntent(intent) {
-    clearPendingEvaluation();
-    const myGeneration = requestGeneration;
+    if (activeRequestController) {
+        activeRequestController.abort();
+        activeRequestController = null;
+    }
+    const myGeneration = ++requestGeneration;
     const controller = new AbortController();
     activeRequestController = controller;
     setResultLoading();
@@ -581,7 +588,12 @@ withProgrammaticUpdate(() => {
 setResultIdle();
 
 fetch('/api/scenarios', { cache: 'no-store' })
-    .then((response) => response.json())
+    .then((response) => {
+        if (!response.ok) {
+            throw new Error(`Request failed with status ${response.status}`);
+        }
+        return response.json();
+    })
     .then((scenarios) => {
         scenarioBox.innerHTML = '';
         scenarioButtons = [];
