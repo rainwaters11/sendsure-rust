@@ -1,8 +1,10 @@
 mod precedence;
 
+use super::rules::{
+    approval_rules, security_rules, signature_rules, token_swap_rules, transfer_rules,
+};
 use super::{Decision, Evaluation, Intent};
 use crate::registries::Registries;
-use crate::{approval_rules, security_rules, signature_rules, token_swap_rules, transfer_rules};
 
 pub(crate) use precedence::{hit, sort_rule_hits};
 

@@ -2,6 +2,7 @@ mod decision;
 mod engine;
 mod evaluation;
 mod intent;
+mod rules;
 
 pub use decision::Decision;
 pub use engine::evaluate;
