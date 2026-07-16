@@ -17,13 +17,3 @@ impl std::fmt::Display for Decision {
         })
     }
 }
-
-impl Decision {
-    pub(crate) fn priority(self) -> u8 {
-        match self {
-            Decision::Ready => 0,
-            Decision::Review => 1,
-            Decision::Stop => 2,
-        }
-    }
-}
