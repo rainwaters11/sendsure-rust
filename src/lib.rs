@@ -4,9 +4,7 @@ pub mod models;
 pub mod registries;
 
 pub use models::{ActionType, Decision, Evaluation, Intent, RuleHit};
-pub use registries::{
-    ContractProfile, DepositProfile, Exchange, Network, Registries, Token,
-};
+pub use registries::{ContractProfile, DepositProfile, Exchange, Network, Registries, Token};
 
 pub fn evaluate(intent: &Intent, registries: &Registries) -> Evaluation {
     let mut hits = Vec::new();
