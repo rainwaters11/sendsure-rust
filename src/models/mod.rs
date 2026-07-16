@@ -3,6 +3,7 @@ mod engine;
 mod evaluation;
 mod intent;
 mod rules;
+mod validators;
 
 pub use decision::Decision;
 pub use engine::evaluate;

@@ -1,7 +1,7 @@
 use crate::models::hit;
+use crate::models::validators::{canonical_network_id, norm};
 use crate::models::{ActionType, Decision, Intent, RuleHit};
 use crate::registries::Registries;
-use crate::{canonical_network_id, norm};
 
 pub(crate) fn token_swap_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if let Some(id) = norm(&i.asset_identifier) {

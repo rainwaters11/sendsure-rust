@@ -1,5 +1,5 @@
-use crate::is_uint256_max;
 use crate::models::hit;
+use crate::models::validators::is_uint256_max;
 use crate::models::{ActionType, Decision, Intent, RuleHit};
 
 pub(crate) fn approval_rules(i: &Intent, hits: &mut Vec<RuleHit>) {

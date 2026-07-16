@@ -1,7 +1,7 @@
 use crate::models::hit;
+use crate::models::validators::{destination_addresses_match, resolved_expected_tag};
 use crate::models::{ActionType, Decision, Intent, RuleHit};
 use crate::registries::Registries;
-use crate::{destination_addresses_match, resolved_expected_tag};
 
 pub(crate) fn transfer_rules(i: &Intent, registries: &Registries, hits: &mut Vec<RuleHit>) {
     if matches!(i.action_type, ActionType::Send | ActionType::Swap) {
