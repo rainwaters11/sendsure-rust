@@ -31,9 +31,8 @@ fn css_without_whitespace(source: &str) -> String {
 
 #[test]
 fn options_evaluate_returns_success_with_required_cors_headers() {
-    let response = round_trip(
-        "OPTIONS /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 0\r\n\r\n",
-    );
+    let response =
+        round_trip("OPTIONS /api/evaluate HTTP/1.1\r\nHost: example\r\nContent-Length: 0\r\n\r\n");
     assert!(response.starts_with("HTTP/1.1 204 No Content\r\n"));
     assert!(response.contains("Access-Control-Allow-Origin: *\r\n"));
     assert!(response.contains("Access-Control-Allow-Methods: POST, OPTIONS\r\n"));
@@ -243,7 +242,8 @@ fn frontend_contains_required_form_and_fetch_guards() {
         APP_JS.contains("function decisionSummary(decision)")
             && APP_JS.contains("Do not continue until this issue is corrected.")
             && APP_JS.contains("A risk needs your attention before you continue.")
-            && APP_JS.contains("Details match the stated intent. Review your wallet before continuing.")
+            && APP_JS
+                .contains("Details match the stated intent. Review your wallet before continuing.")
             && APP_JS.contains("Deterministic Rust rules")
             && APP_JS.contains("No custody")
             && APP_JS.contains("No transaction sent"),
