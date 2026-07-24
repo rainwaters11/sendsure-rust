@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::net::TcpStream;
 
-use crate::frontend::{APP_JS, INDEX_HTML, LOGO_HORIZONTAL_SVG, MARK_SVG, STYLES_CSS};
+use crate::models::frontend::{APP_JS, INDEX_HTML, LOGO_HORIZONTAL_SVG, MARK_SVG, STYLES_CSS};
 use crate::{demo_scenarios, evaluate, parse_http_request, Intent, Registries};
 
 use super::cors::{ACCESS_CONTROL_ALLOW_ORIGIN, EVALUATE_OPTIONS_EXTRA_HEADERS};

@@ -2,6 +2,7 @@ mod cli;
 mod decision;
 mod engine;
 mod evaluation;
+pub mod frontend;
 mod http;
 mod intent;
 mod registries;
@@ -21,5 +22,8 @@ pub use registries::{ContractProfile, DepositProfile, Exchange, Network, Registr
 pub use scenario::Scenario;
 pub use scenarios::demo_scenarios;
 pub use server::serve;
+
+#[doc(hidden)]
+pub use server::test_support;
 
 pub(crate) use engine::hit;
