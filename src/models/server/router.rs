@@ -2,9 +2,7 @@ use std::io::Write;
 use std::net::TcpStream;
 
 use crate::frontend::{APP_JS, INDEX_HTML, LOGO_HORIZONTAL_SVG, MARK_SVG, STYLES_CSS};
-use crate::{
-    demo_scenarios, evaluate, parse_http_request, Intent, Registries,
-};
+use crate::{demo_scenarios, evaluate, parse_http_request, Intent, Registries};
 
 use super::cors::{ACCESS_CONTROL_ALLOW_ORIGIN, EVALUATE_OPTIONS_EXTRA_HEADERS};
 
@@ -19,10 +17,7 @@ pub(crate) fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
     )
 }
 
-fn route_request(
-    first: &str,
-    body: &str,
-) -> (&'static str, &'static str, String, &'static str) {
+fn route_request(first: &str, body: &str) -> (&'static str, &'static str, String, &'static str) {
     if first.starts_with("OPTIONS /api/evaluate ") {
         (
             "204 No Content",

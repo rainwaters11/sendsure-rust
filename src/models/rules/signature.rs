@@ -1,6 +1,6 @@
 use crate::models::hit;
-use crate::models::{ActionType, Decision, Intent, RuleHit};
 use crate::models::registries::Registries;
+use crate::models::{ActionType, Decision, Intent, RuleHit};
 
 pub(crate) fn signature_rules(i: &Intent, r: &Registries, hits: &mut Vec<RuleHit>) {
     if i.action_type == ActionType::Sign && i.asset_was_unsolicited {
