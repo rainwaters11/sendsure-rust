@@ -1,3 +1,4 @@
+mod cli;
 mod decision;
 mod engine;
 mod evaluation;
@@ -10,6 +11,7 @@ mod scenarios;
 mod server;
 mod validators;
 
+pub use cli::run_demo;
 pub use decision::Decision;
 pub use engine::evaluate;
 pub use evaluation::{Evaluation, RuleHit};
