@@ -1,5 +1,5 @@
 use crate::models::Intent;
-use crate::registries::{DepositProfile, Registries};
+use crate::models::registries::{DepositProfile, Registries};
 
 use super::network::{canonical_network_id, network_matches};
 

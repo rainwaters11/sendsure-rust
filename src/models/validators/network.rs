@@ -1,4 +1,4 @@
-use crate::registries::Registries;
+use crate::models::registries::Registries;
 
 pub(crate) fn norm(value: &Option<String>) -> Option<String> {
     value
