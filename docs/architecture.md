@@ -6,14 +6,18 @@
 
 SendSure is a deterministic transaction preflight safety layer. It accepts a wallet-agnostic `Intent`, runs local Rust rules (no LLM, blockchain API, or external risk service), and returns one of three decisions: `STOP`, `REVIEW`, or `READY`.
 
-The codebase today is split across two source files:
+The implementation is organized under `src/models/`. The crate root preserves the
+public API through re-exports, while the binary remains a thin entry point:
 
 | File | Role |
 | --- | --- |
-| `src/lib.rs` | Domain models, registries, rule engine, HTTP request parser, demo scenarios |
-| `src/main.rs` | CLI entry, HTTP server, embedded frontend (HTML/CSS/JS), server integration tests |
+| `src/models/` | Domain types, registries, rules, engine, validators, scenarios, HTTP parser, server, CLI, and embedded frontend |
+| `src/lib.rs` | Declares `models` and re-exports the supported public API |
+| `src/main.rs` | Selects CLI demo or HTTP server mode and delegates to the library |
+| `tests/engine.rs` | Rule-engine, parser, and scenario regression tests |
+| `tests/server.rs` | HTTP server and frontend contract integration tests |
 
-Integration tests live in `tests/engine.rs`. Server  tests live in `src/main.rs`.
+Production logic and tests no longer live in `src/lib.rs` or `src/main.rs`.
 
 ---
 
@@ -23,7 +27,7 @@ Integration tests live in `tests/engine.rs`. Server  tests live in `src/main.rs`
 
 ```
 main()
-  └─ run_demo()
+  └─ models::cli::run_demo()
        ├─ Registries::default()
        ├─ demo_scenarios()          
        └─ for each scenario:
@@ -44,10 +48,10 @@ The CLI path is read-only with respect to the network. It exercises the same `ev
 
 ```
 main()
-  └─ serve("127.0.0.1:8080")
+  └─ models::server::serve("0.0.0.0:$PORT")
        └─ TcpListener::bind -? for each connection:
             handle_client(stream)
-              ├─ parse_http_request(stream)   // lib.rs
+              ├─ models::http::parse_http_request(stream)
               └─ route by request line prefix:
                    OPTIONS /api/evaluate                    -> 204 + CORS headers
                    GET  /health                             -> {"status":"ok"}
@@ -89,7 +93,7 @@ If no rule fires, the engine adds `READY_INTENT_MATCH`. Hits are sorted by decis
 
 ### 2.5 Demo scenarios
 
-These seven scenarios and their decisions must not change during modularization:
+These seven scenarios and their decisions are protected compatibility invariants:
 
 | # | Name | Decision | Triggered rule ID |
 | --- | --- | --- | --- |
@@ -106,7 +110,10 @@ It must persist after all the changes.
 
 ### 2.6 Frontend flow
 
-The frontend is embedded in `src/main.rs` as three string constants (`INDEX_HTML`, `STYLES_CSS`, `APP_JS`). It is served statically by the HTTP server; no build step is required.
+The frontend assets live in `src/models/frontend/`. `mod.rs` embeds
+`index.html`, `styles.css`, `app.js`, and the SVG brand assets with
+`include_str!`. They are served statically by the HTTP server; no frontend build
+step is required.
 
 ```
 Browser loads GET /
@@ -118,7 +125,7 @@ Browser loads GET /
                  └─ applyContinueState(STOP|REVIEW|READY)
 ```
 
-Key frontend behaviors (validated by tests in `main.rs`):
+Key frontend behaviors (validated by tests in `tests/server.rs`):
 
 - Action tabs (`SEND`, `SWAP`, `APPROVE`, `SIGN`) toggle visible form fields
 - Manual edits invalidate prior evaluation results
@@ -128,28 +135,30 @@ Key frontend behaviors (validated by tests in `main.rs`):
 
 ---
 
-## 3. Recommended Module Boundaries
-
-The current `lib.rs` mixes six concerns. The recommended split:
+## 3. Implemented Module Boundaries
 
 | Module | Responsibility | Current location |
 | --- | --- | --- |
-| `models` | `Decision`, `ActionType`, `Intent`, `Evaluation`, `RuleHit`, `Scenario` | `lib.rs` |
-| `registries` | `Network`, `Token`, `Exchange`, `DepositProfile`, `ContractProfile`, `Registries` and `Default` impl | `lib.rs` |
-| `engine` | `evaluate()`, decision precedence, `hit()` helper | `lib.rs`  |
-| `rules` | `security_rules`, `transfer_rules`, `token_swap_rules`, `signature_rules`, `approval_rules` | `lib.rs`  |
-| `validators` | Normalization helpers: `norm`, `normalize_text`, `canonical_network_id`, `destination_addresses_match`, `is_uint256_max`, etc. | `lib.rs`  |
-| `scenarios` | `demo_scenarios()`, scenario builders (`xrp_intent`, `basic`, `scenario`) | `lib.rs`  |
-| `http` | `parse_http_request`, `parse_content_length` | `lib.rs` |
-| `server` | `serve`, `handle_client`, route dispatch | `main.rs` |
-| `frontend` | Embedded HTML/CSS/JS assets (or external static files) | `main.rs`  |
-| `cli` | `run_demo()` | `main.rs`  |
+| Core models | `Decision`, `ActionType`, `Intent`, `Evaluation`, `RuleHit`, `Scenario` | `src/models/*.rs` |
+| `registries` | Registry types and `Registries::default()` seed data | `src/models/registries/` |
+| `engine` | `evaluate()`, decision precedence, hit construction and sorting | `src/models/engine/` |
+| `rules` | Security, transfer, token/swap, signature, and approval rules | `src/models/rules/` |
+| `validators` | Network, address, and allowance normalization/validation | `src/models/validators/` |
+| `scenarios` | `demo_scenarios()` and scenario builders | `src/models/scenarios/` |
+| `http` | HTTP request and `Content-Length` parsing | `src/models/http/` |
+| `server` | TCP listener, connection handling, routing, and CORS | `src/models/server/` |
+| `frontend` | Embedded HTML, CSS, JavaScript, and SVG assets | `src/models/frontend/` |
+| `cli` | `run_demo()` | `src/models/cli/` |
 
-`main.rs` should remain a thin entry point that delegates to `cli` and `server` modules.
+`src/models/mod.rs` owns module declarations and internal/public re-exports.
+`src/lib.rs` forwards the supported crate API, so existing callers can continue
+using paths such as `sendsure_rust::evaluate` and `sendsure_rust::serve`.
+`src/main.rs` is intentionally limited to argument/environment handling and
+delegation.
 
 ---
 
-## 4. Proposed Future Project Structure
+## 4. Current Project Structure
 
 ```
 sendsure-rust/
@@ -159,167 +168,132 @@ sendsure-rust/
 │   │   ├── mod.rs
 │   │   ├── decision.rs
 │   │   ├── intent.rs
-│   │   └── evaluation.rs
-│   ├── registries/
-│   │   ├── mod.rs
-│   │   ├── types.rs                 # Network, Token, Exchange, etc.
-│   │   └── default.rs               # Registries::default() seed data
-│   ├── engine/
-│   │   ├── mod.rs                   # evaluate()
-│   │   └── precedence.rs            # Decision::priority, hit sorting
-│   ├── rules/
-│   │   ├── mod.rs
-│   │   ├── security.rs
-│   │   ├── transfer.rs
-│   │   ├── token_swap.rs
-│   │   ├── signature.rs
-│   │   └── approval.rs
-│   ├── validators/
-│   │   ├── mod.rs
-│   │   ├── network.rs               # canonical_network_id, network_matches
-│   │   ├── address.rs               # destination_addresses_match
-│   │   └── allowance.rs             # is_uint256_max, parse_hex/decimal
-│   ├── scenarios/
-│   │   ├── mod.rs
-│   │   └── demo.rs                  # demo_scenarios(), builders
-│   ├── http/
-│   │   ├── mod.rs
-│   │   └── parser.rs                # parse_http_request
-│   ├── server/
-│   │   ├── mod.rs                   # serve()
-│   │   ├── router.rs                # route dispatch
-│   │   └── cors.rs                  # CORS header constants
-│   ├── cli/
-│   │   └── mod.rs                   # run_demo()
-│   └── frontend/
-│       ├── mod.rs
-│       ├── index.html               # or keep as include_str! constants initially
-│       ├── app.js
-│       └── styles.css
+│   │   ├── evaluation.rs
+│   │   ├── scenario.rs
+│   │   ├── registries/
+│   │   │   ├── mod.rs
+│   │   │   ├── types.rs             # Network, Token, Exchange, etc.
+│   │   │   └── default.rs           # Registries::default() seed data
+│   │   ├── engine/
+│   │   │   ├── mod.rs               # evaluate()
+│   │   │   └── precedence.rs        # Decision::priority, hit sorting
+│   │   ├── rules/
+│   │   │   ├── mod.rs
+│   │   │   ├── security.rs
+│   │   │   ├── transfer.rs
+│   │   │   ├── token_swap.rs
+│   │   │   ├── signature.rs
+│   │   │   └── approval.rs
+│   │   ├── validators/
+│   │   │   ├── mod.rs
+│   │   │   ├── network.rs
+│   │   │   ├── address.rs
+│   │   │   └── allowance.rs
+│   │   ├── scenarios/
+│   │   │   ├── mod.rs
+│   │   │   └── demo.rs
+│   │   ├── http/
+│   │   │   ├── mod.rs
+│   │   │   └── parser.rs
+│   │   ├── server/
+│   │   │   ├── mod.rs
+│   │   │   ├── router.rs
+│   │   │   └── cors.rs
+│   │   ├── cli/
+│   │   │   └── mod.rs
+│   │   └── frontend/
+│   │       ├── mod.rs
+│   │       ├── index.html
+│   │       ├── app.js
+│   │       └── styles.css
+│   ├── lib.rs                       # public re-exports
+│   └── main.rs                      # thin binary entry point
+├── assets/
+│   ├── sendsure-mark.svg
+│   └── sendsure-logo-horizontal.svg
 ├── tests/
-│   ├── engine.rs                    # rule/regression tests (unchanged paths)
-│   ├── scenarios.rs                 # optional: demo scenario contract tests
-│   └── server.rs                    # move main.rs server tests here
+│   ├── engine.rs                    # rule/parser/scenario regression tests
+│   └── server.rs                    # server and frontend integration tests
 └── docs/
     └── architecture.md              # this document
 ```
 
-**Note:** A flat `src/` tree (without a workspace) is sufficient for the current MVP size. The workspace layout is listed only as a future option if the project grows beyond a single crate.
+The project remains a single crate. Modules are nested under `src/models/` by
+project convention; this is the implemented layout, not a future proposal.
 
 ---
 
-## 5. Risks in the Current Single-File Structure
+## 5. Current Risks and Testability Gaps
 
-### 5.1 `lib.rs` concentration risk
+### 5.1 Module organization
 
-- **909 lines** mixing models, registries, five rule groups, validators, HTTP parsing, and demo data.
-- Adding a new rule requires navigating unrelated code; merge conflicts are likely on a team.
-- Rule IDs and decision logic are not isolated, making accidental behavior drift harder to spot in review.
+- The former `lib.rs` and `main.rs` concentration risks have been resolved.
+- All application modules are nested under `src/models/` by project convention.
+  This is consistent internally, although transport and presentation modules
+  (`server`, `cli`, and `frontend`) are not domain models in the strict sense.
+- `src/lib.rs` re-exports the supported API. Changes to these re-exports can
+  still break external callers and integration tests.
 
-### 5.2 `main.rs` concentration risk
+### 5.2 Testability gaps
 
-- **933 lines** including ~630 lines of embedded frontend strings and ~180 lines of frontend contract tests.
-- Server routing, static asset serving, and CLI demo logic share one file with the binary entry point.
-- Frontend changes require recompiling the entire binary; there is no separation between transport and presentation.
+- `tests/server.rs` exercises CORS, connection-error handling, favicon routes,
+  and frontend asset contracts through a hidden `test_support` API.
+- End-to-end coverage is still missing for `/health`, `/api/scenarios`,
+  `/api/evaluate` success and malformed JSON responses, and 404 responses.
+- Rule groups are tested thoroughly through `evaluate()`, but not independently
+  as isolated modules.
 
-### 5.3 Testability gaps
-
-- Server route handlers are private functions in `main.rs`; only CORS and frontend-string tests exist there.
-- `handle_client` is not directly tested for `/health`, `/api/scenarios`, `/api/evaluate` success/error paths, or 404 responses.
-- Rule groups cannot be unit-tested in isolation without calling the full `evaluate()` pipeline.
-
-### 5.4 Server resilience gaps
+### 5.3 Server resilience gaps
 
 - **Single-threaded blocking I/O:** one slow client blocks all others.
 - **No request size limit:** large `Content-Length` values could exhaust memory.
 - **No timeout:** hung connections hold the accept loop indefinitely.
 - **No graceful shutdown:** `Ctrl+C` drops in-flight requests.
-- **Panic on malformed first line:** `request.lines().next().unwrap_or_default()` is safe, but routing uses string prefix matching that is fragile for paths with query strings or trailing slashes.
+- **Fragile route matching:** string-prefix routing can mishandle paths with query strings or trailing slashes.
 - **Connection: close only:** no keep-alive; acceptable for demo, not for production load.
 
-### 5.5 Migration risk
+### 5.4 Maintenance risk
 
-- Moving embedded frontend constants can break `include_str!` paths or test assertions that grep `INDEX_HTML` / `APP_JS` content.
-- Splitting `Registries::default()` seed data from rule logic must preserve exact registry contents (network aliases, deposit tag `482901`, contract trust flags).
-- Re-export changes in `lib.rs` could break the public API used by `tests/engine.rs` and `main.rs`.
+- Frontend asset moves can break relative `include_str!` paths.
+- Changes to `Registries::default()` must preserve expected aliases, deposit
+  profiles, token identifiers, and contract trust flags.
+- The hidden `test_support` module exposes wrappers solely so integration tests
+  can exercise internal server behavior; it should not become application API.
 
 ---
 
-## 6. Safe Migration Sequence
+## 6. Modularization Status and Verification
 
-Each step should pass `cargo test`, `cargo clippy -- -D warnings`, `cargo run`, and `cargo run -- serve` before proceeding. Do not change rule logic, rule IDs, API routes, or scenario outcomes in any step.
+The extract-and-re-export migration is complete:
 
-### Phase 0 — Baseline lock (before any move)
+1. Core models and registries were extracted under `src/models/`.
+2. Validators and five rule groups were separated by responsibility.
+3. Evaluation precedence and demo scenarios were extracted.
+4. HTTP parsing, server routing/CORS, and CLI execution were extracted.
+5. Frontend source was moved to standalone embedded asset files.
+6. Engine, server, and frontend coverage was consolidated under `tests/`.
+7. `src/lib.rs` retained compatibility re-exports and `src/main.rs` became a
+   thin entry point.
 
-1. Confirm `cargo test` passes (engine + main.rs frontend/server tests).
-2. Run `cargo run` and verify summary: STOP 5, REVIEW 1, READY 1.
-3. Run `cargo run -- serve` and manually hit `/health`, `/api/scenarios`, `/api/evaluate`.
-4. Add a CI snapshot test (optional) that asserts all seven scenario rule IDs if not already covered.
+Use these commands when changing module boundaries or behavior:
 
-### Phase 1 — Extract models and registries (lowest risk)
-
-1. Create `src/models/` with `Decision`, `ActionType`, `Intent`, `Evaluation`, `RuleHit`, `Scenario`.
-2. Create `src/registries/` with registry types and `Registries::default()`.
-3. Re-export everything from `lib.rs` to preserve the public API.
-4. **Verify:** `tests/engine.rs` compiles unchanged; all demo scenario tests pass.
-
-### Phase 2 — Extract validators
-
-1. Move normalization and parsing helpers to `src/validators/`.
-2. Keep function signatures identical; no logic changes.
-3. **Verify:** network alias tests, EVM case-insensitive address tests, uint256 max tests still pass.
-
-### Phase 3 — Extract rule groups
-
-1. Move each `*_rules` function to `src/rules/<name>.rs`.
-2. Export a single `apply_all_rules(intent, registries) -> Vec<RuleHit>` or keep individual functions called from `engine/mod.rs`.
-3. **Verify:** every rule ID test in `tests/engine.rs` passes; slippage boundary tests (3%, 3.01%, 10%, 10.01%) unchanged.
-
-### Phase 4 — Extract engine and scenarios
-
-1. Move `evaluate()` to `src/engine/mod.rs`.
-2. Move `demo_scenarios()` and builders to `src/scenarios/demo.rs`.
-3. **Verify:** `demo_scenarios_follow_expected_decisions` and `seven_demo_scenarios_have_required_summary` pass.
-
-### Phase 5 — Extract HTTP parser
-
-1. Move `parse_http_request` to `src/http/parser.rs`.
-2. **Verify:** all `parsing_http_request_*` tests in `tests/engine.rs` pass.
-
-### Phase 6 — Extract server and CLI from main.rs
-
-1. Move `run_demo()` to `src/cli/mod.rs`.
-2. Move `serve`, `handle_client`, and route table to `src/server/`.
-3. Keep `main.rs` as:
-
-```rust
-fn main() {
-    if std::env::args().any(|a| a == "serve") {
-        sendsure_rust::server::serve("127.0.0.1:8080").unwrap_or(/* ... */);
-    } else {
-        sendsure_rust::cli::run_demo();
-    }
-}
+```bash
+cargo test
+cargo clippy -- -D warnings
+cargo run
+cargo run -- serve
 ```
 
-4. Move `#[cfg(test)] mod tests` from `main.rs` to `tests/server.rs` or `src/server/tests.rs`.
-5. **Verify:** CORS test, frontend contract tests, and manual server smoke test pass.
+Protected invariants:
 
-### Phase 7 — Extract frontend assets (optional, lowest priority)
-
-1. Move `INDEX_HTML`, `STYLES_CSS`, `APP_JS` to `src/frontend/` as files loaded via `include_str!`.
-2. Update frontend contract tests to read from the new paths.
-3. **Do not change frontend behavior** — byte-identical output is the goal.
-4. **Verify:** browser demo still loads scenarios and evaluates intents correctly.
-
-### Protected invariants checklist (run after every phase)
-
-- [ ] `cargo run` summary: STOP 5, REVIEW 1, READY 1
-- [ ] All seven scenario names and decisions unchanged
-- [ ] All rule IDs in README table still fire for their test cases
-- [ ] API routes: `GET /health`, `GET /api/scenarios`, `POST /api/evaluate`, `OPTIONS /api/evaluate`, `GET /`, `GET /app.js`, `GET /styles.css` , `GET /assets/sendsure-mark.svg` , `GET /assets/sendsure-logo-horizontal.svg`
-- [ ] `cargo test` green
-- [ ] `cargo clippy -- -D warnings` clean
+- `cargo run` summary remains STOP 5, REVIEW 1, READY 1.
+- All seven scenario names, decisions, and rule IDs remain unchanged.
+- Existing public re-exports continue to compile for `tests/engine.rs`.
+- API routes remain available: `GET /health`, `GET /api/scenarios`,
+  `POST /api/evaluate`, `OPTIONS /api/evaluate`, `GET /`, `GET /app.js`,
+  `GET /styles.css`, `GET /assets/sendsure-mark.svg`, and
+  `GET /assets/sendsure-logo-horizontal.svg`.
+- `cargo test` and `cargo clippy -- -D warnings` remain clean.
 
 ---
 
@@ -339,9 +313,11 @@ fn main() {
 - EVM case-insensitive address matching vs XRPL case-sensitive matching
 - HTTP body parsing (split reads, Content-Length variants, incomplete body, pipelined bytes)
 
-`src/main.rs` tests cover:
+`tests/server.rs` covers:
 
 - CORS preflight for `OPTIONS /api/evaluate`
+- Ignorable and non-ignorable connection error handling
+- SVG favicon/static asset routes
 - Frontend HTML/JS contract (form structure, abort handling, field visibility, reset flow)
 
 ### 7.2 Areas needing more tests
@@ -356,20 +332,23 @@ fn main() {
 | **Frontend API errors** | No server-side test for malformed JSON → 400 | POST invalid body, assert 400 + error JSON |
 | **Scenarios API** | No test that `/api/scenarios` returns seven items with `expected_decision` | HTTP round-trip asserting array length and decisions |
 
-### 7.3 Suggested test layout after modularization
+### 7.3 Current test layout
 
 ```
 tests/
-├── engine.rs          # rule/regression (existing)
-├── server.rs          # HTTP route integration (new)
-└── scenarios.rs       # demo contract: names, order, decisions (optional extract)
+├── engine.rs          # rule, parser, and scenario regression tests
+└── server.rs          # HTTP server and frontend integration tests
 ```
+
+Scenario contract tests currently remain in `tests/engine.rs`. They may be
+extracted to `tests/scenarios.rs` if that suite grows.
 
 ---
 
 ## 8. Server Resilience Improvements
 
-These are post-modularization enhancements. None are required for the demo, but the server module split makes them easier to add.
+These are future enhancements. None are required for the demo, but the current
+server module boundary makes them easier to add.
 
 | Improvement | Why | Suggested approach |
 | --- | --- | --- |
@@ -382,7 +361,9 @@ These are post-modularization enhancements. None are required for the demo, but 
 | **Error logging** | Server errors only go to stderr on bind failure | Log route, status, and parse errors without leaking intent contents |
 | **Rate limiting** | Demo has no abuse protection | Optional per-IP limit if exposed beyond localhost |
 
-For the demo phase, binding to `127.0.0.1:8080` limits exposure. Any change from localhost should add body limits and timeouts first.
+The binary currently binds to `0.0.0.0:$PORT` (`8080` by default). Deployments
+should therefore add body limits, timeouts, and suitable network-level access
+controls before exposing the server to untrusted traffic.
 
 ---
 
@@ -417,15 +398,19 @@ All rule IDs that must be preserved:
 
 ## 10. Summary
 
-The SendSure MVP is functionally complete: a deterministic rule engine, seven demo scenarios, a CLI runner, and a self-contained HTTP server with embedded frontend. The main technical debt is organizational — two large files combine unrelated concerns, which increases merge conflict risk and makes server hardening harder.
+The SendSure MVP is functionally complete and modularized under `src/models/`.
+`src/lib.rs` provides compatibility re-exports, `src/main.rs` is a thin binary
+entry point, frontend assets have standalone source files, and integration tests
+live under `tests/`.
 
-The recommended path is a **incremental extract-and-re-export migration** across seven phases, with the demo scenario contract and public API re-exports as the primary guardrails. Server resilience and deeper route testing should follow once the server lives in its own module.
-
-**Must preserve throughout:**
+The next priorities are deeper route-level integration coverage and server
+resilience. Future structural changes must preserve:
 
 ```bash
 cargo run
 cargo run -- serve
+cargo test
+cargo clippy -- -D warnings
 ```
 
 - Current API routes
